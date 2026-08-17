@@ -1,0 +1,53 @@
+name: Release
+
+# 打 tag（如 v0.1.0）推送到 main 时，自动构建 Windows 安装包并发布 GitHub Release。
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      # tauri-action 会自动识别 Tauri 2，执行 `tauri build` 并把产物（msi / nsis）
+      # 上传到本次 tag 对应的 Release。
+      - name: Build and publish (Tauri)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Into ${{ github.ref_name }}"
+          releaseBody: "自动构建的 Into 安装包。下载 msi / exe 安装即可。"
+          releaseDraft: true
+          prerelease: false
+
+      # 说明：
+      # - 产物为未签名版本，Windows 安装时 SmartScreen 可能提示，属正常。
+      #   如需签名，可配置仓库 Secrets（如 TAURI_ACTION_WINDOWS_CERTIFICATE /
+      #   TAURI_ACTION_WINDOWS_CERTIFICATE_PASSWORD）后由 tauri-action 自动签名。
+      # - 目前只构建 Windows。如需 macOS / Linux，可把上面的 job 改为 matrix：
+      #   strategy:
+      #     matrix:
+      #       platform: [windows-latest, macos-latest, ubuntu-latest]
+      #   并在各平台按需安装依赖（如 Linux 的 libwebkit2gtk 等）。
