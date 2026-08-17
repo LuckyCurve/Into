@@ -1,6 +1,6 @@
 name: Release
 
-# 打 tag（如 v0.1.0）推送到 main 时，自动构建 Windows 安装包并发布 GitHub Release。
+# 打 tag（如 v0.1.0）推送到 main 时，自动构建 Windows / macOS / Linux 安装包并发布 GitHub Release。
 on:
   push:
     tags:
@@ -11,7 +11,11 @@ permissions:
 
 jobs:
   release:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,13 +28,25 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # Linux 需要 webkit2gtk 等系统依赖才能编译 Tauri。
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libxkbcommon-dev
+
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: "./src-tauri -> target"
 
-      # tauri-action 会自动识别 Tauri 2，执行 `tauri build` 并把产物（msi / nsis）
-      # 上传到本次 tag 对应的 Release。
+      # tauri-action 自动识别 Tauri 2，执行 `tauri build`，并把产物上传到该 tag 对应的 Release。
       - name: Build and publish (Tauri)
         uses: tauri-apps/tauri-action@v0
         env:
@@ -38,16 +54,13 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Into ${{ github.ref_name }}"
-          releaseBody: "自动构建的 Into 安装包。下载 msi / exe 安装即可。"
+          releaseBody: "自动构建的 Into 安装包：Windows（msi / nsis）、macOS（dmg / app）、Linux（deb / AppImage）。"
           releaseDraft: true
           prerelease: false
 
       # 说明：
-      # - 产物为未签名版本，Windows 安装时 SmartScreen 可能提示，属正常。
-      #   如需签名，可配置仓库 Secrets（如 TAURI_ACTION_WINDOWS_CERTIFICATE /
-      #   TAURI_ACTION_WINDOWS_CERTIFICATE_PASSWORD）后由 tauri-action 自动签名。
-      # - 目前只构建 Windows。如需 macOS / Linux，可把上面的 job 改为 matrix：
-      #   strategy:
-      #     matrix:
-      #       platform: [windows-latest, macos-latest, ubuntu-latest]
-      #   并在各平台按需安装依赖（如 Linux 的 libwebkit2gtk 等）。
+      # - 各平台产物均为未签名版本：Windows/macOS 安装时系统可能提示，属正常。
+      #   如需签名，可配置仓库 Secrets（Windows: TAURI_ACTION_WINDOWS_CERTIFICATE /
+      #   TAURI_ACTION_WINDOWS_CERTIFICATE_PASSWORD；macOS: APPLE_CERTIFICATE / APPLE_ID 等）
+      #   后由 tauri-action 自动签名（含 notarize）。
+      # - macOS 产物架构取决于对应 runner（默认 x64 / arm64 之一）；如需 universal 需额外配置。
