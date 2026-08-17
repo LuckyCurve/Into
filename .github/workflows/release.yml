@@ -25,6 +25,11 @@ jobs:
         with:
           node-version: 24
 
+      # tauri-action 不会自动安装前端依赖，必须显式安装（含 @tauri-apps/cli），
+      # 否则 `npm run tauri build` 会报 `tauri: command not found`。
+      - name: Install frontend dependencies
+        run: npm ci
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
