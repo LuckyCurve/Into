@@ -97,7 +97,7 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Create draft release
+      - name: Create release
         id: create-release
         uses: actions/github-script@v8
         env:
@@ -106,14 +106,14 @@ jobs:
           script: |
             const tag = process.env.GITHUB_REF_NAME
             const body = process.env.RELEASE_BODY
-            // 幂等：先清掉同 tag 下已有的 draft release，避免重复触发时越攒越多
-            // （已发布的 release 不会被删除）。
+            // 幂等：先清掉同 tag 下已有的 release（无论草稿还是已发布），
+            // 避免重复触发时越攒越多；重新触发会用新产物整体替换。
             const { data: releases } = await github.rest.repos.listReleases({
               ...context.repo,
               per_page: 100
             })
             for (const r of releases) {
-              if (r.tag_name === tag && r.draft) {
+              if (r.tag_name === tag) {
                 await github.rest.repos.deleteRelease({
                   ...context.repo,
                   release_id: r.id
@@ -125,7 +125,7 @@ jobs:
               tag_name: tag,
               name: `Into ${tag}`,
               body,
-              draft: true,
+              draft: false,
               prerelease: false
             })
             return data.id
