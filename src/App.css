@@ -32,6 +32,43 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ---------- 滚动条（贴合暖樱珊瑚主题） ----------
+   设计意图：延续全站“药丸”语言（tab / chip / 温度点 / 主按钮都是 999px），
+   滚动条也用柔和圆角胶囊；静止时仅是淡淡珊瑚晕，抓取时升温到 --coral-deep，
+   呼应主按钮的 --coral→--coral-deep。轨道透明，让纸面渐变透出，不与面板抢戏。 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(224, 138, 114, 0.3) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(224, 138, 114, 0.28);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(207, 106, 84, 0.55);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--coral-deep);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .app {
   min-height: 100%;
   display: flex;
