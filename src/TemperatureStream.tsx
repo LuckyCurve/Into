@@ -16,13 +16,43 @@ export function TemperatureStream({ buckets }: Props) {
   if (buckets.length === 0) return null;
   const n = buckets.length;
   const x = (i: number) => (n === 1 ? 0 : (i / (n - 1)) * W);
-  const y = (avg: number) => H - (avg / 5) * H; // 0 度在底，5 度在顶
+  const y = (avg: number) => H - (avg / 5) * H;
 
-  const pts = buckets.map((b, i) => [x(i), y(b.avg)] as const);
-  const line = pts
-    .map((p, i) => (i === 0 ? `M${p[0]},${p[1]}` : `L${p[0]},${p[1]}`))
+  // 只在有数据的桶之间连线：把连续有数据的桶切成若干段，
+  // 段与段之间的沉默日（count===0）断开，不把“没记录”画成最低温（0 度）。
+  const runs: number[][] = [];
+  let cur: number[] = [];
+  buckets.forEach((b, i) => {
+    if (b.count > 0) cur.push(i);
+    else if (cur.length) {
+      runs.push(cur);
+      cur = [];
+    }
+  });
+  if (cur.length) runs.push(cur);
+
+  const line = runs
+    .map((run) =>
+      run
+        .map((i, k) =>
+          k === 0 ? `M${x(i)},${y(buckets[i].avg)}` : `L${x(i)},${y(buckets[i].avg)}`,
+        )
+        .join(" "),
+    )
     .join(" ");
-  const area = `${line} L${W},${H} L0,${H} Z`;
+
+  const area = runs
+    .map((run) => {
+      const top = run
+        .map((i, k) =>
+          k === 0 ? `M${x(i)},${y(buckets[i].avg)}` : `L${x(i)},${y(buckets[i].avg)}`,
+        )
+        .join(" ");
+      const first = run[0];
+      const last = run[run.length - 1];
+      return `${top} L${x(last)},${H} L${x(first)},${H} Z`;
+    })
+    .join(" ");
 
   const total = buckets.reduce((s, b) => s + b.count, 0);
   const avgAll = total

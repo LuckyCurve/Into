@@ -268,6 +268,20 @@ fn list_blocked_db(conn: &Connection) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+/// 解除对一个词的屏蔽。
+fn unblock_term_db(conn: &Connection, term: &str) -> Result<(), String> {
+    let term = term.trim().to_string();
+    if term.is_empty() {
+        return Err("没有可解除屏蔽的词".into());
+    }
+    conn.execute(
+        "DELETE FROM blocked_terms WHERE term = ?1",
+        params![term],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// 生成一批本地示例记录，用于预览分析效果（不含任何真实数据）。
 /// 内容刻意混入反复出现的主题词（咖啡/电影/雨天/散步/独处/音乐/React）与
 /// 会被过滤的套路词（今天/感觉/看了/不错），方便检验关键词云与停用词。
@@ -472,6 +486,12 @@ fn block_keyword(term: String, state: State<'_, Mutex<Connection>>) -> Result<()
 }
 
 #[tauri::command]
+fn unblock_keyword(term: String, state: State<'_, Mutex<Connection>>) -> Result<(), String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    unblock_term_db(&conn, &term)
+}
+
+#[tauri::command]
 fn list_blocked_terms(state: State<'_, Mutex<Connection>>) -> Result<Vec<String>, String> {
     let conn = state.lock().map_err(|e| e.to_string())?;
     list_blocked_db(&conn)
@@ -535,6 +555,7 @@ pub fn run() {
             delete_entry,
             review,
             block_keyword,
+            unblock_keyword,
             list_blocked_terms,
             generate_test_data,
             clear_all_entries
@@ -766,6 +787,20 @@ mod tests {
         assert_eq!(list, vec!["今天".to_string(), "感觉".to_string()]); // 字典序
         block_term_db(&c, "感觉").unwrap(); // 重复插入被忽略
         assert_eq!(list_blocked_db(&c).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn unblock_term_removes_from_list() {
+        let c = mem();
+        block_term_db(&c, "感觉").unwrap();
+        block_term_db(&c, "今天").unwrap();
+        assert_eq!(list_blocked_db(&c).unwrap().len(), 2);
+        unblock_term_db(&c, "感觉").unwrap();
+        assert_eq!(list_blocked_db(&c).unwrap(), vec!["今天".to_string()]);
+        unblock_term_db(&c, "  ").unwrap_err(); // 空词拒绝
+        // 重复解除是幂等的，不应报错
+        unblock_term_db(&c, "今天").unwrap();
+        assert_eq!(list_blocked_db(&c).unwrap().len(), 0);
     }
 
     #[test]

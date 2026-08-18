@@ -1,17 +1,14 @@
-import type { Entry, ScoreCount } from "./types";
+import type { ScoreCount } from "./types";
 import { TEMPERATURE_WORDS } from "./types";
 
 interface Props {
   distribution: ScoreCount[];
-  entries: Entry[];
 }
 
-export function ScoreSpread({ distribution, entries }: Props) {
+export function ScoreSpread({ distribution }: Props) {
   const max = Math.max(1, ...distribution.map((d) => d.count));
   const total = distribution.reduce((s, d) => s + d.count, 0);
   const peak = [...distribution].sort((a, b) => b.count - a.count)[0];
-  const top = [...entries].filter((e) => e.score >= 4).slice(0, 3);
-  const faint = [...entries].filter((e) => e.score === 1).slice(0, 3);
 
   return (
     <div className="spread">
@@ -38,31 +35,6 @@ export function ScoreSpread({ distribution, entries }: Props) {
           </div>
         ))}
       </div>
-
-      {(top.length > 0 || faint.length > 0) && (
-        <div className="spread-picks">
-          {top.length > 0 && (
-            <div className="pick">
-              <span className="pick-tag warm">心里发暖</span>
-              {top.map((e) => (
-                <q key={e.id} className="pick-q">
-                  {e.content}
-                </q>
-              ))}
-            </div>
-          )}
-          {faint.length > 0 && (
-            <div className="pick">
-              <span className="pick-tag faint">淡淡的</span>
-              {faint.map((e) => (
-                <q key={e.id} className="pick-q">
-                  {e.content}
-                </q>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

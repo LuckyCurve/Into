@@ -2,12 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Entry, ReviewResult } from "./types";
 import { EntryItem } from "./EntryItem";
-import {
-  temperatureSeries,
-  calendarCells,
-} from "./analytics";
+import { temperatureSeries } from "./analytics";
 import { TemperatureStream } from "./TemperatureStream";
-import { CalendarHeatmap } from "./CalendarHeatmap";
 import { ScoreSpread } from "./ScoreSpread";
 import { KeywordCloud } from "./KeywordCloud";
 
@@ -85,7 +81,6 @@ export function Review() {
   const summary = result?.summary;
 
   const series = useMemo(() => temperatureSeries(entries), [entries]);
-  const heat = useMemo(() => calendarCells(entries), [entries]);
   const keywords = result?.keywords ?? [];
 
   const filtered = useMemo(
@@ -100,16 +95,6 @@ export function Review() {
 
   function toggleKeyword(term: string) {
     setActiveKeyword((prev) => (prev === term ? null : term));
-  }
-
-  async function blockTerm(term: string) {
-    try {
-      await invoke("block_keyword", { term });
-      if (activeKeyword === term) setActiveKeyword(null);
-      reload();
-    } catch {
-      // 忽略：屏蔽失败不应打断浏览
-    }
   }
 
   return (
@@ -178,41 +163,28 @@ export function Review() {
           <section className="panel">
             <header className="panel-head">
               <h3 className="panel-title">最近的温度</h3>
-              <p className="panel-sub">每天的平均温度，连成你心里的起伏</p>
+              <p className="panel-sub">这些天的平均温度</p>
             </header>
             <TemperatureStream buckets={series} />
           </section>
 
           <section className="panel">
             <header className="panel-head">
-              <h3 className="panel-title">你愿意记录的时刻</h3>
-              <p className="panel-sub">颜色越深，那天写得越多</p>
-            </header>
-            <CalendarHeatmap cells={heat} />
-          </section>
-
-          <section className="panel">
-            <header className="panel-head">
               <h3 className="panel-title">温度的切面</h3>
-              <p className="panel-sub">不是打分，是你心的分布</p>
+              <p className="panel-sub">1~5 度的分布</p>
             </header>
-            {summary && (
-              <ScoreSpread distribution={summary.distribution} entries={entries} />
-            )}
+            {summary && <ScoreSpread distribution={summary.distribution} />}
           </section>
 
           <section className="panel">
             <header className="panel-head">
               <h3 className="panel-title">你最近常提到</h3>
-              <p className="panel-sub">
-                反复出现的，才是兴趣。点一个词，看看相关记录
-              </p>
+              <p className="panel-sub">点一个词，只看相关记录</p>
             </header>
             <KeywordCloud
               keywords={keywords}
               active={activeKeyword}
               onToggle={toggleKeyword}
-              onBlock={blockTerm}
             />
           </section>
 

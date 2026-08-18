@@ -34,6 +34,8 @@ export function Settings({ open, onClose }: Props) {
   const [generating, setGenerating] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [blocked, setBlocked] = useState<string[]>([]);
+  const [newTerm, setNewTerm] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -43,6 +45,9 @@ export function Settings({ open, onClose }: Props) {
       .then((v) => !cancelled && setEnabled(v))
       .catch(() => !cancelled && setEnabled(false))
       .finally(() => !cancelled && setLoading(false));
+    invoke<string[]>("list_blocked_terms")
+      .then((list) => !cancelled && setBlocked(list))
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -91,6 +96,30 @@ export function Settings({ open, onClose }: Props) {
     } finally {
       setClearing(false);
       setConfirmClear(false);
+    }
+  }
+
+  async function addBlocked() {
+    const term = newTerm.trim();
+    if (!term) return;
+    try {
+      await invoke("block_keyword", { term });
+      setNewTerm("");
+      const list = await invoke<string[]>("list_blocked_terms");
+      setBlocked(list);
+      window.dispatchEvent(new Event("into:entries-changed"));
+    } catch (e) {
+      console.error("屏蔽词失败", e);
+    }
+  }
+
+  async function removeBlocked(term: string) {
+    try {
+      await invoke("unblock_keyword", { term });
+      setBlocked((prev) => prev.filter((t) => t !== term));
+      window.dispatchEvent(new Event("into:entries-changed"));
+    } catch (e) {
+      console.error("解除屏蔽失败", e);
     }
   }
 
@@ -203,6 +232,50 @@ export function Settings({ open, onClose }: Props) {
             >
               清空全部
             </button>
+          )}
+        </div>
+
+        <div className="settings-divider" />
+        <div className="settings-section-title">屏蔽的词</div>
+        <div className="settings-blocked">
+          <div className="blocked-row">
+            <input
+              className="blocked-input"
+              type="text"
+              placeholder="屏蔽一个词（不再出现在关键词里）"
+              value={newTerm}
+              onChange={(e) => setNewTerm(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") addBlocked();
+              }}
+              aria-label="要屏蔽的词"
+            />
+            <button
+              type="button"
+              className="ghost"
+              disabled={newTerm.trim().length === 0}
+              onClick={addBlocked}
+            >
+              屏蔽
+            </button>
+          </div>
+          {blocked.length === 0 ? (
+            <p className="blocked-empty">还没有屏蔽的词。</p>
+          ) : (
+            <div className="blocked-list">
+              {blocked.map((term) => (
+                <span className="blocked-chip" key={term}>
+                  {term}
+                  <button
+                    type="button"
+                    aria-label={`解除屏蔽「${term}」`}
+                    onClick={() => removeBlocked(term)}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
           )}
         </div>
       </div>

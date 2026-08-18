@@ -8,13 +8,6 @@ export interface DayBucket {
   count: number;
 }
 
-export interface HeatCell {
-  ts: number; // 当日本地零点
-  count: number;
-  weekIndex: number; // 第几周（列）
-  weekday: number; // 0=周一 … 6=周日
-}
-
 // ---------- 本地时间辅助 ----------
 function startOfDay(ts: number): number {
   const d = new Date(ts);
@@ -81,26 +74,4 @@ export function temperatureSeries(entries: Entry[]): DayBucket[] {
     out.push({ ts: t, count: b.c, avg: b.c ? b.s / b.c : 0 });
   }
   return out;
-}
-
-/** 逐日密度，按周分列（GitHub 式热力图用）。 */
-export function calendarCells(entries: Entry[]): HeatCell[] {
-  if (entries.length === 0) return [];
-  const times = entries.map((e) => e.created_at);
-  const start = startOfWeek(Math.min(...times));
-  const endDay = startOfDay(Math.max(...times));
-
-  const counts = new Map<number, number>();
-  for (const e of entries) {
-    const d = startOfDay(e.created_at);
-    counts.set(d, (counts.get(d) ?? 0) + 1);
-  }
-
-  const cells: HeatCell[] = [];
-  for (let t = start; t <= endDay; t += DAY_MS) {
-    const dow = (new Date(t).getDay() + 6) % 7;
-    const weekIndex = Math.floor((t - start) / (7 * DAY_MS));
-    cells.push({ ts: t, count: counts.get(t) ?? 0, weekIndex, weekday: dow });
-  }
-  return cells;
 }

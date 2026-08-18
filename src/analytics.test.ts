@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Entry } from "./types";
-import { temperatureSeries, calendarCells } from "./analytics";
+import { temperatureSeries } from "./analytics";
 
 function e(content: string, score: number, at: number): Entry {
   return { id: 0, content, score, created_at: at, updated_at: null };
@@ -36,24 +36,3 @@ describe("temperatureSeries", () => {
   });
 });
 
-describe("calendarCells", () => {
-  it("按日计数，并给出正确的星期与周列", () => {
-    // 2024-01-01 是周一
-    const mon = mid(2024, 1, 1);
-    const sun = mid(2024, 1, 7);
-    const nextMon = mid(2024, 1, 8);
-    const cells = calendarCells([
-      e("x", 2, mon),
-      e("y", 3, sun),
-      e("z", 1, nextMon),
-    ]);
-    const at = (ts: number) => cells.find((c) => c.ts === ts)!;
-    expect(at(mon).weekday).toBe(0);
-    expect(at(mon).weekIndex).toBe(0);
-    expect(at(mon).count).toBe(1);
-    expect(at(sun).weekday).toBe(6);
-    expect(at(sun).weekIndex).toBe(0);
-    expect(at(nextMon).weekday).toBe(0);
-    expect(at(nextMon).weekIndex).toBe(1);
-  });
-});
