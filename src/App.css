@@ -296,10 +296,10 @@ body {
 /* ---------- Review ---------- */
 .review {
   width: 100%;
-  max-width: 640px;
+  max-width: 720px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
 .review-controls {
@@ -371,59 +371,327 @@ body {
   box-shadow: 0 0 0 4px rgba(224, 138, 114, 0.16);
 }
 
-.stats {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 16px;
-  font-family: var(--sans);
-  font-size: 14px;
-  color: var(--ink-soft);
-  padding: 14px 18px;
+.sample-btn {
+  align-self: flex-start;
+}
+
+.panel {
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--paper-soft);
-}
-
-.stats b {
-  color: var(--ink);
-  font-size: 16px;
-}
-
-.dist {
+  padding: 16px 18px;
   display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
-.dist-cell {
-  display: inline-flex;
+.panel-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.panel-title {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 14px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--coral-deep);
+  font-weight: 600;
+}
+
+.panel-sub {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+/* ---------- 温度河流 ---------- */
+.stream-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stream {
+  width: 100%;
+  height: 120px;
+  display: block;
+}
+
+.stream-axis {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.stream-avg {
+  color: var(--coral-deep);
+}
+
+/* ---------- 记录日历 ---------- */
+.heat-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.heat-grid {
+  display: grid;
+  grid-template-rows: repeat(7, 14px);
+  grid-auto-flow: column;
+  gap: 3px;
+  width: max-content;
+}
+
+.heat-cell {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+
+/* ---------- 温度切面 ---------- */
+.spread {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.spread-read {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+.spread-read b {
+  color: var(--coral-deep);
+}
+
+.spread-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.spread-row {
+  display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 10px;
 }
 
-.dist-dot {
-  width: 10px;
+.spread-label {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink-soft);
+  width: 92px;
+  flex: none;
+}
+
+.spread-label i {
+  font-style: normal;
+  color: var(--rose);
+}
+
+.spread-track {
+  flex: 1;
   height: 10px;
-  border-radius: 50%;
-  display: inline-block;
   background: var(--line);
+  border-radius: 999px;
+  overflow: hidden;
 }
 
-.dist-dot[data-score="1"] {
-  background: #f1dcd4;
+.spread-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--coral);
 }
-.dist-dot[data-score="2"] {
-  background: #ecc1b2;
-}
-.dist-dot[data-score="3"] {
+
+.spread-fill[data-score="1"] {
   background: #e7a78f;
 }
-.dist-dot[data-score="4"] {
+.spread-fill[data-score="2"] {
   background: #db8470;
 }
-.dist-dot[data-score="5"] {
+.spread-fill[data-score="3"] {
   background: #cf7e93;
 }
+.spread-fill[data-score="4"] {
+  background: #cf6a54;
+}
+.spread-fill[data-score="5"] {
+  background: #c25a78;
+}
+
+.spread-num {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink-soft);
+  width: 24px;
+  text-align: right;
+  flex: none;
+}
+
+.spread-picks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.pick {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pick-tag {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.pick-tag.warm {
+  background: rgba(207, 126, 147, 0.16);
+  color: var(--rose);
+}
+
+.pick-tag.faint {
+  background: var(--line);
+  color: var(--ink-soft);
+}
+
+.pick-q {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+/* ---------- 关键词云 ---------- */
+.cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: baseline;
+}
+
+.cloud-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+}
+
+.cloud-word {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 8px;
+  font-family: var(--serif);
+  color: var(--coral-deep);
+  line-height: 1.2;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.cloud-word:hover {
+  color: var(--ink);
+}
+
+.cloud-word.on {
+  background: linear-gradient(180deg, var(--coral), var(--coral-deep));
+  color: #fff;
+}
+
+.cloud-word:focus-visible {
+  outline: 2px solid var(--coral);
+  outline-offset: 2px;
+}
+
+.cloud-block {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.cloud-item:hover .cloud-block,
+.cloud-block:focus-visible {
+  opacity: 1;
+}
+
+.cloud-block:hover {
+  color: var(--rose);
+}
+
+.cloud-empty {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+/* ---------- 关键词筛选条 ---------- */
+.filter-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.filter-chip b {
+  color: var(--ink);
+}
+
+.filter-clear {
+  border: none;
+  background: var(--line);
+  color: var(--ink-soft);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.filter-clear:hover {
+  background: var(--coral);
+  color: #fff;
+}
+
+/* 关键词命中高亮 */
+.hl {
+  background: var(--glow);
+  color: var(--ink);
+  border-radius: 4px;
+  padding: 0 2px;
+}
+
+@media (max-width: 480px) {
+  .spread-picks {
+    grid-template-columns: 1fr;
+  }
+}
+
 
 .entry-list {
   list-style: none;
@@ -720,4 +988,26 @@ body {
 
 .switch.on .knob {
   transform: translateX(18px);
+}
+
+.settings-divider {
+  height: 1px;
+  background: var(--line);
+  margin: 4px 18px 2px;
+  opacity: 0.6;
+}
+
+.settings-section-title {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+  padding: 0 18px;
+  margin-bottom: 2px;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: none;
 }

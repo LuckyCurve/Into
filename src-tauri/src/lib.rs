@@ -1,7 +1,9 @@
 use rusqlite::types::Value;
 use rusqlite::{params, Connection};
 use serde::Serialize;
-use std::sync::Mutex;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Mutex, OnceLock};
+use jieba_rs::Jieba;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -25,6 +27,12 @@ struct ScoreCount {
 }
 
 #[derive(Serialize)]
+struct Keyword {
+    term: String,
+    count: i64,
+}
+
+#[derive(Serialize)]
 struct RangeSummary {
     count: i64,
     avg_score: f64,
@@ -35,6 +43,7 @@ struct RangeSummary {
 struct ReviewResult {
     entries: Vec<Entry>,
     summary: RangeSummary,
+    keywords: Vec<Keyword>,
 }
 
 fn now_ms() -> i64 {
@@ -43,6 +52,114 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+// ---------- 关键词提取（jieba 分词 + 停用词 + 跨条目计数）----------
+const STOP_CHARS: &[&str] = &[
+    "的", "了", "是", "我", "你", "他", "她", "它", "在", "和", "与", "也", "都", "就", "不", "人", "有", "这", "那", "个",
+    "们", "会", "能", "要", "上", "下", "里", "中", "到", "去", "来", "说", "看", "想", "很", "太", "又", "还", "但", "而",
+    "把", "被", "让", "给", "从", "向", "对", "为", "以", "因", "所", "之", "其", "此", "些", "吗", "呢", "吧", "啊", "呀", "哦",
+    "嘛", "没", "着", "过", "得", "地", "等", "让", "今", "明", "昨", "早", "晚", "午", "周", "时", "候", "刚", "才", "最",
+    "近", "前", "后", "每", "听", "吃", "买", "玩", "喝", "读", "写", "做", "走", "跑", "聊", "学", "卖", "家", "本", "部",
+    "杯", "次", "场", "件", "位", "条", "种", "类", "双", "只", "块", "点",
+];
+
+const PHRASE_STOP: &[&str] = &[
+    "我们", "你们", "他们", "她们", "它们", "自己", "什么", "怎么", "因为", "所以", "一些", "这个", "那个", "一个",
+    "没有", "这么", "那么", "已经", "可以", "应该", "现在", "时候", "知道", "一直", "不是", "就是", "还是", "但是",
+    "然后", "这样", "那样", "今天", "明天", "昨天", "前天", "上午", "下午", "晚上", "早上", "中午", "周末", "上周",
+    "这周", "下周", "本月", "今年", "刚才", "最近", "平时", "有时", "偶尔", "凌晨", "清晨", "傍晚", "半夜", "每天",
+    "每年", "每月", "那时", "这时", "感觉", "觉得", "好像", "似乎", "显得", "看来", "不错", "好看", "好玩", "喜欢",
+    "开心", "舒服", "高兴", "难受", "糟糕", "一般", "还好", "愿意", "希望", "想要",
+];
+
+const EN_STOP: &[&str] = &[
+    "the", "and", "for", "are", "but", "not", "had", "has", "was", "with", "that", "this", "from", "your", "what",
+    "when", "how", "who", "can", "will", "just", "like", "really", "very", "about", "into", "have", "been", "they",
+    "them", "you", "out", "get", "got", "her", "his", "our",
+];
+
+fn is_cjk(c: char) -> bool {
+    let code = c as u32;
+    (0x3400..=0x9fff).contains(&code)
+}
+
+/// 判断一个 jieba 切出的 token 是否保留为候选关键词。
+fn keep_token(tok: &str) -> Option<String> {
+    let t = tok.trim();
+    if t.is_empty() {
+        return None;
+    }
+    // 含任何非字母/数字（中文标点、书名号、符号、空白）一律丢弃
+    if !t.chars().all(|c| c.is_alphanumeric()) {
+        return None;
+    }
+    let has_cjk = t.chars().any(is_cjk);
+    if has_cjk {
+        if t.chars().count() < 2 {
+            return None; // 单字中文通常是噪声
+        }
+        if STOP_CHARS.contains(&t) || PHRASE_STOP.contains(&t) {
+            return None;
+        }
+        Some(t.to_string())
+    } else {
+        let lower = t.to_lowercase();
+        // 纯数字不要；至少含一个字母
+        if !lower.chars().any(|c| c.is_ascii_alphabetic()) {
+            return None;
+        }
+        if lower.chars().count() < 2 {
+            return None;
+        }
+        if EN_STOP.contains(&lower.as_str()) {
+            return None;
+        }
+        Some(lower)
+    }
+}
+
+static JIEBA: OnceLock<Jieba> = OnceLock::new();
+fn jieba() -> &'static Jieba {
+    JIEBA.get_or_init(Jieba::new)
+}
+
+/// 从条目里提取「反复出现的词」：jieba 分词 → 整词过滤停用词 →
+/// 按不同条目计数（一条里出现多次只算一次）→ 应用屏蔽词表 → 取 top。
+fn extract_keywords(
+    entries: &[Entry],
+    blocked: &[String],
+    min_count: i64,
+    limit: usize,
+) -> Vec<Keyword> {
+    let blocked_set: HashSet<&str> = blocked.iter().map(|s| s.as_str()).collect();
+    let mut seen: HashMap<String, HashSet<i64>> = HashMap::new();
+    let j = jieba();
+    for e in entries {
+        let tokens = j.cut(&e.content, false);
+        let mut per_entry: HashSet<String> = HashSet::new();
+        for tok in tokens {
+            if let Some(term) = keep_token(&tok) {
+                if blocked_set.contains(term.as_str()) {
+                    continue;
+                }
+                if per_entry.insert(term.clone()) {
+                    seen.entry(term).or_default().insert(e.id);
+                }
+            }
+        }
+    }
+    let mut out: Vec<Keyword> = seen
+        .into_iter()
+        .map(|(term, ids)| Keyword {
+            term,
+            count: ids.len() as i64,
+        })
+        .filter(|k| k.count >= min_count)
+        .collect();
+    out.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.term.cmp(&b.term)));
+    out.truncate(limit);
+    out
 }
 
 fn create_schema(conn: &Connection) -> Result<(), String> {
@@ -54,6 +171,11 @@ fn create_schema(conn: &Connection) -> Result<(), String> {
             created_at INTEGER NOT NULL,
             updated_at INTEGER
         )",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS blocked_terms (term TEXT PRIMARY KEY)",
         [],
     )
     .map_err(|e| e.to_string())?;
@@ -115,6 +237,81 @@ fn delete_entry_db(conn: &Connection, id: i64) -> Result<(), String> {
     conn.execute("DELETE FROM entries WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// 把用户在前端 ✕ 掉的词写入屏蔽表（个人化停用词典）。
+fn block_term_db(conn: &Connection, term: &str) -> Result<(), String> {
+    let term = term.trim().to_string();
+    if term.is_empty() {
+        return Err("没有可屏蔽的词".into());
+    }
+    conn.execute(
+        "INSERT OR IGNORE INTO blocked_terms (term) VALUES (?1)",
+        params![term],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 返回当前被屏蔽的词（用于前端过滤关键词）。
+fn list_blocked_db(conn: &Connection) -> Result<Vec<String>, String> {
+    let mut stmt = conn
+        .prepare("SELECT term FROM blocked_terms ORDER BY term")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| e.to_string())?);
+    }
+    Ok(out)
+}
+
+/// 生成一批本地示例记录，用于预览分析效果（不含任何真实数据）。
+/// 内容刻意混入反复出现的主题词（咖啡/电影/雨天/散步/独处/音乐/React）与
+/// 会被过滤的套路词（今天/感觉/看了/不错），方便检验关键词云与停用词。
+fn seed_test_data_db(conn: &Connection, n: i64) -> Result<i64, String> {
+    let pool: [&str; 12] = [
+        "今天在街角咖啡店坐了一会儿，感觉很不错",
+        "看了《星际穿越》，雨天里很舒服",
+        "周末想一个人独处，听听音乐",
+        "傍晚去河边散步，风吹得温柔",
+        "又去了那家咖啡店，还是喜欢",
+        "熬夜看了书，眼睛有点累",
+        "用 React 写了点东西，挺开心",
+        "雨天不想出门，窝着看电影",
+        "早上咖啡配一本书，刚刚好",
+        "一个人散步到天黑，喜欢这种安静",
+        "电影院的空调太冷，但电影好看",
+        "雨天咖啡和音乐，刚好",
+    ];
+    let scores: [i64; 12] = [5, 4, 3, 4, 5, 1, 4, 3, 5, 4, 2, 4];
+    let day = 86_400_000i64;
+    let now = now_ms();
+    let mut inserted = 0i64;
+    for i in 0..n {
+        let content = pool[(i as usize) % pool.len()];
+        let score = scores[(i as usize) % scores.len()];
+        // 确定性地把时间打散到最近 ~60 天，避免引入随机数依赖
+        let day_off = ((i * 5 + (i * i) % 11) % 60) as i64;
+        let hour = ((i * 7) % 20) as i64;
+        let created = now - day_off * day - hour * 3_600_000;
+        conn.execute(
+            "INSERT INTO entries (content, score, created_at, updated_at) VALUES (?1, ?2, ?3, NULL)",
+            params![content, score, created],
+        )
+        .map_err(|e| e.to_string())?;
+        inserted += 1;
+    }
+    Ok(inserted)
+}
+
+/// 删除全部记录。刻意不碰 blocked_terms——那是用户通过 ✕ 沉淀的个人偏好。
+fn clear_all_entries_db(conn: &Connection) -> Result<u64, String> {
+    conn.execute("DELETE FROM entries", [])
+        .map_err(|e| e.to_string())?;
+    Ok(conn.changes() as u64)
 }
 
 /// Shared WHERE clause for time range + multi-keyword search (AND of tokens).
@@ -236,7 +433,13 @@ fn review_db(
 ) -> Result<ReviewResult, String> {
     let entries = query_entries(conn, start_ms, end_ms, search, 500)?;
     let summary = summarize(conn, start_ms, end_ms, search)?;
-    Ok(ReviewResult { entries, summary })
+    let blocked = list_blocked_db(conn)?;
+    let keywords = extract_keywords(&entries, &blocked, 2, 28);
+    Ok(ReviewResult {
+        entries,
+        summary,
+        keywords,
+    })
 }
 
 #[tauri::command]
@@ -260,6 +463,30 @@ fn update_entry(
 fn delete_entry(id: i64, state: State<'_, Mutex<Connection>>) -> Result<(), String> {
     let conn = state.lock().map_err(|e| e.to_string())?;
     delete_entry_db(&conn, id)
+}
+
+#[tauri::command]
+fn block_keyword(term: String, state: State<'_, Mutex<Connection>>) -> Result<(), String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    block_term_db(&conn, &term)
+}
+
+#[tauri::command]
+fn list_blocked_terms(state: State<'_, Mutex<Connection>>) -> Result<Vec<String>, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    list_blocked_db(&conn)
+}
+
+#[tauri::command]
+fn generate_test_data(state: State<'_, Mutex<Connection>>) -> Result<i64, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    seed_test_data_db(&conn, 40)
+}
+
+#[tauri::command]
+fn clear_all_entries(state: State<'_, Mutex<Connection>>) -> Result<u64, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    clear_all_entries_db(&conn)
 }
 
 #[tauri::command]
@@ -306,7 +533,11 @@ pub fn run() {
             add_entry,
             update_entry,
             delete_entry,
-            review
+            review,
+            block_keyword,
+            list_blocked_terms,
+            generate_test_data,
+            clear_all_entries
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -472,6 +703,69 @@ mod tests {
         assert_eq!(r.summary.count, 2);
         // newest first
         assert_eq!(r.entries[0].content, "y");
+    }
+
+    #[test]
+    fn generate_test_data_inserts_rows() {
+        let c = mem();
+        let n = seed_test_data_db(&c, 40).unwrap();
+        assert_eq!(n, 40);
+        let list = query_entries(&c, None, None, None, 100).unwrap();
+        assert_eq!(list.len(), 40);
+        // 至少包含一条带“咖啡”的示例
+        assert!(list.iter().any(|e| e.content.contains("咖啡")));
+        // 分数都在合法范围
+        assert!(list.iter().all(|e| (1..=5).contains(&e.score)));
+    }
+
+    #[test]
+    fn clear_all_entries_removes_rows_but_keeps_blocklist() {
+        let c = mem();
+        seed_test_data_db(&c, 10).unwrap();
+        block_term_db(&c, "感觉").unwrap();
+        assert_eq!(query_entries(&c, None, None, None, 100).unwrap().len(), 10);
+        let removed = clear_all_entries_db(&c).unwrap();
+        assert_eq!(removed, 10);
+        assert_eq!(query_entries(&c, None, None, None, 100).unwrap().len(), 0);
+        // 屏蔽词表保留
+        assert_eq!(list_blocked_db(&c).unwrap(), vec!["感觉".to_string()]);
+    }
+
+    #[test]
+    fn extract_keywords_segments_and_filters() {
+        let c = mem();
+        insert_entry(&c, "早上喝咖啡，刚刚好", 5, 1000).unwrap();
+        insert_entry(&c, "又去那家咖啡店坐了坐", 4, 2000).unwrap();
+        insert_entry(&c, "雨天窝着看电影，舒服", 3, 3000).unwrap();
+        insert_entry(&c, "今天也看了电影，感觉不错", 4, 4000).unwrap();
+        let entries = query_entries(&c, None, None, None, 100).unwrap();
+        let kws = extract_keywords(&entries, &[], 2, 28);
+        let terms: Vec<&str> = kws.iter().map(|k| k.term.as_str()).collect();
+        // jieba 把“电影”作为整词切出，且在两条里出现 → 命中
+        assert!(terms.contains(&"电影"));
+        let movie = kws.iter().find(|k| k.term == "电影");
+        assert!(movie.is_some() && movie.unwrap().count == 2);
+        // 脚手架被过滤
+        assert!(!terms.contains(&"今天"));
+        assert!(!terms.contains(&"感觉"));
+        // 不再有“配一”之类碎片
+        assert!(!terms.iter().any(|t| t.contains("配一")));
+        // 标点 / 书名号 绝不应成为关键词
+        assert!(!terms.iter().any(|t| {
+            t.contains("《") || t.contains("》") || t.contains("，") || t.contains("。")
+        }));
+    }
+
+    #[test]
+    fn blocked_terms_persist_and_list() {
+        let c = mem();
+        block_term_db(&c, "感觉").unwrap();
+        block_term_db(&c, "今天").unwrap();
+        assert!(block_term_db(&c, "   ").is_err()); // 空词拒绝
+        let list = list_blocked_db(&c).unwrap();
+        assert_eq!(list, vec!["今天".to_string(), "感觉".to_string()]); // 字典序
+        block_term_db(&c, "感觉").unwrap(); // 重复插入被忽略
+        assert_eq!(list_blocked_db(&c).unwrap().len(), 2);
     }
 
     #[test]

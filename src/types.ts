@@ -20,6 +20,12 @@ export interface RangeSummary {
 export interface ReviewResult {
   entries: Entry[];
   summary: RangeSummary;
+  keywords: Keyword[];
+}
+
+export interface Keyword {
+  term: string;
+  count: number;
 }
 
 export const TEMPERATURE_WORDS = ["", "淡淡的", "有点在意", "挺喜欢", "很喜欢", "心里发暖"];

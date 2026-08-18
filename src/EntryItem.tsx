@@ -1,7 +1,31 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Entry } from "./types";
 import { Temperature } from "./Temperature";
+
+function renderContent(text: string, hl?: string): ReactNode {
+  if (!hl) return text;
+  const lower = text.toLowerCase();
+  const q = hl.toLowerCase();
+  const parts: ReactNode[] = [];
+  let i = 0;
+  let k = 0;
+  while (true) {
+    const j = lower.indexOf(q, i);
+    if (j < 0) {
+      parts.push(text.slice(i));
+      break;
+    }
+    if (j > i) parts.push(text.slice(i, j));
+    parts.push(
+      <mark key={k++} className="hl">
+        {text.slice(j, j + q.length)}
+      </mark>,
+    );
+    i = j + q.length;
+  }
+  return parts;
+}
 
 function formatDate(ms: number): string {
   const d = new Date(ms);
@@ -11,10 +35,11 @@ function formatDate(ms: number): string {
 
 interface Props {
   entry: Entry;
+  highlight?: string;
   onChanged: () => void;
 }
 
-export function EntryItem({ entry, onChanged }: Props) {
+export function EntryItem({ entry, highlight, onChanged }: Props) {
   const [editing, setEditing] = useState(false);
   const [content, setContent] = useState(entry.content);
   const [score, setScore] = useState<number | null>(entry.score);
@@ -77,7 +102,7 @@ export function EntryItem({ entry, onChanged }: Props) {
 
   return (
     <li className="entry-item">
-      <p className="entry-content">{entry.content}</p>
+      <p className="entry-content">{renderContent(entry.content, highlight)}</p>
       <div className="entry-meta">
         <Temperature value={entry.score} readOnly />
         <span className="entry-date">{formatDate(entry.created_at)}</span>

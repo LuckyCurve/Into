@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { isEnabled, enable, disable } from "@tauri-apps/plugin-autostart";
+import { invoke } from "@tauri-apps/api/core";
 
 export type AutostartAction = "enable" | "disable";
 
@@ -29,6 +30,10 @@ export function Settings({ open, onClose }: Props) {
   const [enabled, setEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [confirmGenerate, setConfirmGenerate] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -58,6 +63,34 @@ export function Settings({ open, onClose }: Props) {
       console.error("切换开机自启失败", e);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function generateSamples() {
+    if (generating) return;
+    setGenerating(true);
+    try {
+      await invoke("generate_test_data");
+      window.dispatchEvent(new Event("into:entries-changed"));
+    } catch (e) {
+      console.error("生成示例数据失败", e);
+    } finally {
+      setGenerating(false);
+      setConfirmGenerate(false);
+    }
+  }
+
+  async function clearAll() {
+    if (clearing) return;
+    setClearing(true);
+    try {
+      await invoke("clear_all_entries");
+      window.dispatchEvent(new Event("into:entries-changed"));
+    } catch (e) {
+      console.error("清空失败", e);
+    } finally {
+      setClearing(false);
+      setConfirmClear(false);
     }
   }
 
@@ -96,6 +129,81 @@ export function Settings({ open, onClose }: Props) {
           >
             <span className="knob" />
           </button>
+        </div>
+
+        <div className="settings-divider" />
+        <div className="settings-section-title">数据</div>
+
+        <div className="settings-row">
+          <div className="settings-label">
+            <div className="settings-name">生成示例数据</div>
+            <div className="settings-desc">
+              插入一批本地示例记录，用于预览分析效果（不含你的真实数据）
+            </div>
+          </div>
+          {confirmGenerate ? (
+            <div className="settings-actions">
+              <button
+                type="button"
+                className="ghost danger"
+                disabled={generating}
+                onClick={generateSamples}
+              >
+                {generating ? "生成中…" : "确认生成？"}
+              </button>
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => setConfirmGenerate(false)}
+              >
+                取消
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => setConfirmGenerate(true)}
+            >
+              生成示例数据
+            </button>
+          )}
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-label">
+            <div className="settings-name">清空全部</div>
+            <div className="settings-desc">
+              删除全部记录（不可恢复；保留你的屏蔽词偏好）
+            </div>
+          </div>
+          {confirmClear ? (
+            <div className="settings-actions">
+              <button
+                type="button"
+                className="ghost danger"
+                disabled={clearing}
+                onClick={clearAll}
+              >
+                {clearing ? "清空中…" : "确认清空？"}
+              </button>
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => setConfirmClear(false)}
+              >
+                取消
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="ghost danger"
+              onClick={() => setConfirmClear(true)}
+            >
+              清空全部
+            </button>
+          )}
         </div>
       </div>
     </div>
