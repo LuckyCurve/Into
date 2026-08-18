@@ -44,6 +44,11 @@ jobs:
       - name: Frontend typecheck & build
         run: npm run build
 
+      # 前端单元测试（vitest，含 src/*.test.tsx）。
+      # 注意：npm run build 的 tsc 已排除测试文件，故单测需单独跑。
+      - name: Frontend tests
+        run: npm test
+
       - name: Rust tests
         run: cargo test
         working-directory: src-tauri
