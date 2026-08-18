@@ -2,7 +2,12 @@ use rusqlite::types::Value;
 use rusqlite::{params, Connection};
 use serde::Serialize;
 use std::sync::Mutex;
-use tauri::{Manager, State};
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Manager, State,
+};
+use tauri_plugin_autostart::MacosLauncher;
 
 #[derive(Serialize)]
 struct Entry {
@@ -268,12 +273,33 @@ fn review(
     review_db(&conn, start_ms, end_ms, search.as_deref())
 }
 
+/// 是否以「隐藏方式」启动：仅当进程参数包含 `--hidden` 时成立。
+/// 开机自启场景下由 autostart 插件附带该参数，使窗口静默进入系统托盘。
+fn should_start_hidden<I, S>(args: I) -> bool
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    args.into_iter().any(|a| a.as_ref() == "--hidden")
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec!["--hidden"]),
+        ))
         .setup(|app| {
             let conn = init_db(app)?;
             app.manage(Mutex::new(conn));
+            setup_tray(app)?;
+            // 开机自启场景下带 --hidden 启动：隐藏主窗口，仅留在托盘
+            if should_start_hidden(std::env::args()) {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -284,6 +310,43 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// 系统托盘：左键单击显示并聚焦窗口，右键菜单提供「退出」。
+fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let Some(icon) = app.default_window_icon().cloned() else {
+        return Ok(());
+    };
+
+    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&quit])?;
+
+    TrayIconBuilder::new()
+        .icon(icon)
+        .tooltip("Into · 最近")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == "quit" {
+                app.exit(0);
+            }
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                if let Some(w) = tray.app_handle().get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+            }
+        })
+        .build(app)?;
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -409,5 +472,23 @@ mod tests {
         assert_eq!(r.summary.count, 2);
         // newest first
         assert_eq!(r.entries[0].content, "y");
+    }
+
+    #[test]
+    fn hidden_flag_detection() {
+        assert!(!should_start_hidden(Vec::<String>::new()));
+        assert!(!should_start_hidden(vec!["into.exe".to_string()]));
+        assert!(should_start_hidden(vec![
+            "into.exe".to_string(),
+            "--hidden".to_string()
+        ]));
+        // 参数中间出现也应命中
+        assert!(should_start_hidden(vec![
+            "--hidden".to_string(),
+            "--another".to_string()
+        ]));
+        // 仅前缀 / 大小写不同不应命中
+        assert!(!should_start_hidden(vec!["--hidden-x".to_string()]));
+        assert!(!should_start_hidden(vec!["--HIDDEN".to_string()]));
     }
 }
