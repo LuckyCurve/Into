@@ -68,12 +68,42 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # 基于「上一个 tag 到当前 tag」之间的 commit 自己生成变更日志，
+      # 只保留 feat/fix（功能/修复）描述，过滤掉 chore/ci/docs 等内部提交。
+      # 对「直接 commit、无 PR」的仓库，比 GitHub 原生 generate_release_notes 更可靠。
+      - name: Build release body from commits
+        id: body
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          PREV_TAG=$(git tag --sort=-creatordate | grep -v "^${TAG}$" | head -1)
+          RANGE="${PREV_TAG:+$PREV_TAG..}HEAD"
+          CHANGES=$(git log "$RANGE" --pretty=format:'%s' \
+            | grep -E '^(feat|fix)(\(.+\).*)?!?:' \
+            | sed -E 's/^(feat|fix)(\(.+\).*)?!?:[[:space:]]*//' \
+            | sed 's/^/- /')
+          if [ -z "$CHANGES" ]; then
+            CHANGES="- （本次无 feat/fix 类变更）"
+          fi
+          {
+            echo "body<<EOF"
+            echo "自动构建的 Into 安装包：Windows（msi / nsis）、macOS（dmg / app）、Linux（deb / AppImage）。"
+            echo
+            echo "## 本次更新"
+            echo
+            echo "$CHANGES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create draft release
         id: create-release
         uses: actions/github-script@v8
+        env:
+          RELEASE_BODY: ${{ steps.body.outputs.body }}
         with:
           script: |
             const tag = process.env.GITHUB_REF_NAME
+            const body = process.env.RELEASE_BODY
             // 幂等：先清掉同 tag 下已有的 draft release，避免重复触发时越攒越多
             // （已发布的 release 不会被删除）。
             const { data: releases } = await github.rest.repos.listReleases({
@@ -92,21 +122,10 @@ jobs:
               ...context.repo,
               tag_name: tag,
               name: `Into ${tag}`,
-              // 让 GitHub 自动根据自上一个 Release 以来的 commit 生成描述
-              // （feat: 归到 New Features、fix: 归到 Bug Fixes，其余归 Maintenance 等）。
-              generate_release_notes: true,
+              body,
               draft: true,
               prerelease: false
             })
-            // 在自动生成的内容前补一句安装包说明，保留产物信息。
-            const intro = "自动构建的 Into 安装包：Windows（msi / nsis）、macOS（dmg / app）、Linux（deb / AppImage）。\n\n"
-            if (data.body) {
-              await github.rest.repos.updateRelease({
-                ...context.repo,
-                release_id: data.id,
-                body: intro + data.body
-              })
-            }
             return data.id
 
   release:
