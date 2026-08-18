@@ -10,8 +10,57 @@ permissions:
   contents: write
 
 jobs:
+  # 发布前先跑前后端测试；任一失败则整个 release 流水线
+  # （含创建 draft、跨平台构建安装包）都不会继续。
+  # 注：release.yml 仅在打 v* tag 时触发，而 test.yml 只对分支 push 生效，
+  # 因此 tag 发布时的测试闸门必须放在这里才能真正拦住发布。
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # cargo test 编译 Tauri 时同样需要 webkit 等系统库。
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libxkbcommon-dev
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Frontend typecheck & build
+        run: npm run build
+
+      - name: Frontend tests
+        run: npm test
+
+      - name: Rust tests
+        run: cargo test
+        working-directory: src-tauri
+
   # 先单独创建一次 draft release，避免矩阵里每个平台各自创建、导致出现多个同名 release。
   create-release:
+    needs: test
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.create-release.outputs.result }}
