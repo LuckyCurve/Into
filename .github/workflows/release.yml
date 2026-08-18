@@ -92,10 +92,21 @@ jobs:
               ...context.repo,
               tag_name: tag,
               name: `Into ${tag}`,
-              body: "自动构建的 Into 安装包：Windows（msi / nsis）、macOS（dmg / app）、Linux（deb / AppImage）。",
+              // 让 GitHub 自动根据自上一个 Release 以来的 commit 生成描述
+              // （feat: 归到 New Features、fix: 归到 Bug Fixes，其余归 Maintenance 等）。
+              generate_release_notes: true,
               draft: true,
               prerelease: false
             })
+            // 在自动生成的内容前补一句安装包说明，保留产物信息。
+            const intro = "自动构建的 Into 安装包：Windows（msi / nsis）、macOS（dmg / app）、Linux（deb / AppImage）。\n\n"
+            if (data.body) {
+              await github.rest.repos.updateRelease({
+                ...context.repo,
+                release_id: data.id,
+                body: intro + data.body
+              })
+            }
             return data.id
 
   release:
