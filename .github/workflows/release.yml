@@ -69,7 +69,7 @@ jobs:
         uses: actions/checkout@v6
 
       # 基于「上一个 tag 到当前 tag」之间的 commit 自己生成变更日志，
-      # 只保留 feat/fix（功能/修复）描述，过滤掉 chore/ci/docs 等内部提交。
+      # 列出全部提交（不再只筛 feat/fix）。
       # 对「直接 commit、无 PR」的仓库，比 GitHub 原生 generate_release_notes 更可靠。
       - name: Build release body from commits
         id: body
@@ -78,12 +78,9 @@ jobs:
           TAG="${{ github.ref_name }}"
           PREV_TAG=$(git tag --sort=-creatordate | grep -v "^${TAG}$" | head -1)
           RANGE="${PREV_TAG:+$PREV_TAG..}HEAD"
-          CHANGES=$(git log "$RANGE" --pretty=format:'%s' \
-            | grep -E '^(feat|fix)(\(.+\).*)?!?:' \
-            | sed -E 's/^(feat|fix)(\(.+\).*)?!?:[[:space:]]*//' \
-            | sed 's/^/- /')
+          CHANGES=$(git log "$RANGE" --pretty=format:'%s' | sed 's/^/- /')
           if [ -z "$CHANGES" ]; then
-            CHANGES="- （本次无 feat/fix 类变更）"
+            CHANGES="- （本次无提交）"
           fi
           {
             echo "body<<EOF"
