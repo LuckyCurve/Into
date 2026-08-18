@@ -67,6 +67,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          # 必须拉取完整历史与全部 tag，否则 git tag 取不到上一个版本号，
+          # 导致 RANGE 为空、git log "" 直接 fatal 使本步失败。
+          fetch-depth: 0
 
       # 基于「上一个 tag 到当前 tag」之间的 commit 自己生成变更日志，
       # 列出全部提交（不再只筛 feat/fix）。
@@ -78,6 +82,7 @@ jobs:
           TAG="${{ github.ref_name }}"
           PREV_TAG=$(git tag --sort=-creatordate | grep -v "^${TAG}$" | head -1)
           RANGE="${PREV_TAG:+$PREV_TAG..}HEAD"
+          RANGE="${RANGE:-HEAD}"
           CHANGES=$(git log "$RANGE" --pretty=format:'%s' | sed 's/^/- /')
           if [ -z "$CHANGES" ]; then
             CHANGES="- （本次无提交）"
