@@ -10,7 +10,33 @@ permissions:
   contents: write
 
 jobs:
+  # 先单独创建一次 draft release，避免矩阵里每个平台各自创建、导致出现多个同名 release。
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create-release.outputs.result }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create draft release
+        id: create-release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: context.ref_name,
+              name: `Into ${context.ref_name}`,
+              body: "自动构建的 Into 安装包：Windows（msi / nsis）、macOS（dmg / app）、Linux（deb / AppImage）。",
+              draft: true,
+              prerelease: false
+            })
+            return data.id
+
   release:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -51,17 +77,13 @@ jobs:
         with:
           workspaces: "./src-tauri -> target"
 
-      # tauri-action 自动识别 Tauri 2，执行 `tauri build`，并把产物上传到该 tag 对应的 Release。
+      # 通过 releaseId 把产物上传到上面统一创建的那个 release，而不是各自新建。
       - name: Build and publish (Tauri)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Into ${{ github.ref_name }}"
-          releaseBody: "自动构建的 Into 安装包：Windows（msi / nsis）、macOS（dmg / app）、Linux（deb / AppImage）。"
-          releaseDraft: true
-          prerelease: false
+          releaseId: ${{ needs.create-release.outputs.release_id }}
 
       # 说明：
       # - 各平台产物均为未签名版本：Windows/macOS 安装时系统可能提示，属正常。
