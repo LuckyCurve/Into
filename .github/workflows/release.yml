@@ -24,11 +24,25 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const tag = process.env.GITHUB_REF_NAME
+            // 幂等：先清掉同 tag 下已有的 draft release，避免重复触发时越攒越多
+            // （已发布的 release 不会被删除）。
+            const { data: releases } = await github.rest.repos.listReleases({
+              ...context.repo,
+              per_page: 100
+            })
+            for (const r of releases) {
+              if (r.tag_name === tag && r.draft) {
+                await github.rest.repos.deleteRelease({
+                  ...context.repo,
+                  release_id: r.id
+                })
+              }
+            }
             const { data } = await github.rest.repos.createRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag_name: context.ref_name,
-              name: `Into ${context.ref_name}`,
+              ...context.repo,
+              tag_name: tag,
+              name: `Into ${tag}`,
               body: "自动构建的 Into 安装包：Windows（msi / nsis）、macOS（dmg / app）、Linux（deb / AppImage）。",
               draft: true,
               prerelease: false
