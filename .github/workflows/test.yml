@@ -1,6 +1,7 @@
 name: Test
 
 # 每次 push（任意分支）和 PR 都跑：前端类型检查/构建 + Rust 单元测试。
+# 三大桌面平台（Windows / macOS / Linux）并行验证，尽早暴露平台相关问题。
 on:
   push:
     branches: ["**"]
@@ -8,7 +9,11 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -24,8 +29,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # cargo test 编译 Tauri 时同样需要 webkit 等系统库。
+      # cargo test 编译 Tauri 时同样需要 webkit 等系统库（仅 Linux 需要）。
       - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
