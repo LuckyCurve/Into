@@ -55,7 +55,7 @@ export function Settings({
   function loadStats() {
     invoke<DbStats>("db_stats")
       .then(setStats)
-      .catch(() => {});
+      .catch((e) => console.error("读取数据库统计失败", e));
   }
 
   useEffect(() => {
@@ -93,9 +93,10 @@ export function Settings({
     }
   }
 
-  // 数据库为空时才允许生成示例数据；一旦已有任何记录（无论真实还是示例）就禁止。
-  const generateDisabled = (stats?.total ?? 0) > 0;
-  // 仅当「全部都是示例数据」时才允许清理；混入真实记录或无示例时禁用。
+  // 数据库为空（且已确认统计）时才允许生成示例数据；
+  // 一旦已有任何记录、或统计尚未加载/加载失败（stats 为 null），一律禁止——默认走安全态。
+  const generateDisabled = stats == null || stats.total > 0;
+  // 仅当「全部都是示例数据」时才允许清理；混入真实记录、无示例或统计未就绪时禁用。
   const canClearSample = stats?.can_clear_sample ?? false;
 
   async function generateSamples() {

@@ -7,6 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { Settings, decideAutostartAction } from "./Settings";
+import type { DbStats } from "./types";
 
 const { enable, disable, isEnabled } = vi.hoisted(() => ({
   enable: vi.fn(() => Promise.resolve()),
@@ -110,6 +111,16 @@ describe("设置页 · 屏蔽的词", () => {
 });
 
 describe("设置页 · 示例数据生成与清理", () => {
+  it("db_stats 未就绪（stats 为 null）时，生成与清理均安全禁用", async () => {
+    // 模拟命令缺失 / 尚未返回：默认走安全态，不能误让生成按钮可点。
+    dbStats.value = undefined as unknown as DbStats;
+    render(<Settings open={true} onClose={() => {}} />);
+    const gen = await screen.findByRole("button", { name: "生成示例数据" });
+    expect(gen.disabled).toBe(true);
+    const clear = screen.getByRole("button", { name: "清理示例数据" });
+    expect(clear.disabled).toBe(true);
+  });
+
   it("空库时「生成示例数据」可点击，『清理示例数据』不可用", async () => {
     dbStats.value = { total: 0, sample: 0, real: 0, can_clear_sample: false };
     render(<Settings open={true} onClose={() => {}} />);
