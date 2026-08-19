@@ -538,6 +538,13 @@ fn normalize_version(v: &str) -> String {
     v.trim_start_matches('v').to_string()
 }
 
+/// 拼接 GitHub Release 页面地址。
+/// 注意：tag 需使用仓库里的真实标签名（带前导 v，如 `v0.5.0`），
+/// 不能用去掉 v 的纯版本号，否则链接会 404。
+fn release_url(tag: &str) -> String {
+    format!("https://github.com/LuckyCurve/Into/releases/tag/{tag}")
+}
+
 /// 比较 `latest` 是否比 `current` 更新（忽略前导 v，按语义化版本比较）。
 fn is_newer(current: &str, latest: &str) -> Result<bool, String> {
     let c = semver::Version::parse(&normalize_version(current))
@@ -582,7 +589,9 @@ async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
     let tag = parse_latest_tag(&body)?;
     let latest = normalize_version(&tag);
     let has = is_newer(&current, &latest)?;
-    let url = format!("https://github.com/LuckyCurve/Into/releases/tag/{latest}");
+    // URL 必须用原始 tag（带 v 前缀，如 v0.5.0），否则 GitHub 会 404；
+    // 版本比较 / 展示才用去掉 v 的 latest。
+    let url = release_url(&tag);
     Ok(UpdateInfo {
         has_update: has,
         current: normalize_version(&current),
@@ -943,5 +952,19 @@ mod tests {
     fn is_newer_rejects_illegal_version() {
         assert!(is_newer("banana", "0.4.0").is_err());
         assert!(is_newer("0.3.0", "").is_err());
+    }
+
+    #[test]
+    fn release_url_keeps_v_prefix() {
+        // 必须用真实标签名（带 v），否则 GitHub 会 404
+        assert_eq!(
+            release_url("v0.5.0"),
+            "https://github.com/LuckyCurve/Into/releases/tag/v0.5.0"
+        );
+        // 不带 v 的标签也能正确拼接（不擅自加 v）
+        assert_eq!(
+            release_url("0.5.0"),
+            "https://github.com/LuckyCurve/Into/releases/tag/0.5.0"
+        );
     }
 }
