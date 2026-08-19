@@ -67,3 +67,24 @@
 - 开发运行：`npm run tauri dev`
 - 构建前端：`npm run build`
 - Rust 测试：`cargo test`（在 `src-tauri` 目录）
+
+## 发版流程（release）
+打 tag 推到 `main` 即触发自动发版，流程如下：
+1. **先升级版本号，且三处必须一致**（release CI 打出来的安装包版本取自这里；
+   「检查更新」也靠版本号比对最新 release）：
+   - `package.json` 的 `"version"`
+   - `src-tauri/Cargo.toml` 的 `version`
+   - `src-tauri/tauri.conf.json` 的 `"version"`
+2. 提交改动，遵循仓库既有 conventional commit 风格
+   （`feat:` / `fix:` / `style:` / `refactor:` / `docs:` / `ci:`，见历史 commit）。
+3. 打 **annotated tag**，命名 `vX.Y.Z`（如 `v0.4.0`），与上面版本号对应。
+4. 推送：`git push origin main` 推提交，再 `git push origin vX.Y.Z` 推 tag。
+5. 推送 `v*` tag 到 `main` 会触发 `.github/workflows/release.yml`：
+   自动构建 Windows / macOS / Linux 安装包并发布 GitHub Release；
+   release 说明由 CI 基于「上一 tag 到当前 tag」之间的 commit 自动生成
+   （过滤内部提交，只列 `feat` / `fix`）。
+
+注意：
+- tag 一旦推送就立即触发 release 流水线；要重打 tag 前先确认 Actions 状态，避免重复发版。
+- 版本语义按语义化版本递增：功能 / 改进走 minor（如 `v0.3.0 → v0.4.0`），纯修复可走 patch。
+- 不要只打 tag 不升版本号——否则新安装包仍报旧版本，会和「检查更新」逻辑对不上。
