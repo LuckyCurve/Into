@@ -82,26 +82,6 @@ function MaximizeIcon({ maximized }: { maximized: boolean }) {
   );
 }
 
-function RefreshIcon({ spinning }: { spinning: boolean }) {
-  return (
-    <svg
-      className={spinning ? "spin" : undefined}
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-      <path d="M21 3v6h-6" />
-    </svg>
-  );
-}
-
 type View = "capture" | "review";
 
 export default function App() {
@@ -216,7 +196,8 @@ export default function App() {
 
       <header className="topbar" onMouseDown={startDrag}>
         <span className="brand">
-          Into · 最近
+          <span className="brand-dot" aria-hidden="true" />
+          Into
         </span>
         {updateInfo?.has_update && (
           <button
@@ -254,15 +235,7 @@ export default function App() {
         >
           <GearIcon />
         </button>
-        <button
-          className="win-btn check-update"
-          aria-label="检查更新"
-          title="检查更新"
-          onClick={manualCheck}
-          disabled={checking}
-        >
-          <RefreshIcon spinning={checking} />
-        </button>
+        <span className="win-sep" aria-hidden="true" />
         <div className="window-controls">
           <button
             className="win-btn"
@@ -298,6 +271,9 @@ export default function App() {
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         version={version}
+        onCheckUpdate={manualCheck}
+        checkingUpdate={checking}
+        hasUpdate={updateInfo?.has_update ?? false}
       />
       {toast && (
         <div

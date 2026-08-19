@@ -21,13 +21,23 @@ type Props = {
   open: boolean;
   onClose: () => void;
   version?: string;
+  onCheckUpdate?: () => void;
+  checkingUpdate?: boolean;
+  hasUpdate?: boolean;
 };
 
 /**
  * 简单设置面板：目前承载「开机自启」开关。
  * 关闭面板即销毁，避免状态残留。
  */
-export function Settings({ open, onClose, version }: Props) {
+export function Settings({
+  open,
+  onClose,
+  version,
+  onCheckUpdate,
+  checkingUpdate,
+  hasUpdate,
+}: Props) {
   const [enabled, setEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -281,6 +291,23 @@ export function Settings({ open, onClose, version }: Props) {
         </div>
 
         <div className="settings-divider" />
+        <div className="settings-section-title">关于</div>
+        <div className="settings-row">
+          <div className="settings-label">
+            <div className="settings-name">检查更新</div>
+            <div className="settings-desc">
+              {hasUpdate ? "发现新版本，建议更新" : "已是最新"}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="ghost"
+            onClick={onCheckUpdate}
+            disabled={checkingUpdate}
+          >
+            {checkingUpdate ? "检查中…" : "检查更新"}
+          </button>
+        </div>
         <div className="settings-about">
           <div className="settings-name">Into · 兴趣雷达</div>
           <div className="settings-desc">

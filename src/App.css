@@ -32,41 +32,15 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ---------- 滚动条（贴合暖樱珊瑚主题） ----------
-   设计意图：延续全站“药丸”语言（tab / chip / 温度点 / 主按钮都是 999px），
-   滚动条也用柔和圆角胶囊；静止时仅是淡淡珊瑚晕，抓取时升温到 --coral-deep，
-   呼应主按钮的 --coral→--coral-deep。轨道透明，让纸面渐变透出，不与面板抢戏。 */
+/* ---------- 滚动条：直接隐藏，但保留滚动能力 ----------
+   隐藏滚动条后它不再占任何宽度，切到「看看」时可用宽度与「写一点」一致，
+   于是布局不位移、也不出现白边。滚轮 / 触控板 / 键盘仍能正常滚动列表。 */
 * {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(224, 138, 114, 0.3) transparent;
+  scrollbar-width: none;
 }
 
 ::-webkit-scrollbar {
-  width: 11px;
-  height: 11px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background-color: rgba(224, 138, 114, 0.28);
-  border-radius: 999px;
-  border: 3px solid transparent;
-  background-clip: padding-box;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(207, 106, 84, 0.55);
-}
-
-::-webkit-scrollbar-thumb:active {
-  background-color: var(--coral-deep);
-}
-
-::-webkit-scrollbar-corner {
-  background: transparent;
+  display: none;
 }
 
 .app {
@@ -89,13 +63,27 @@ body {
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-family: var(--sans);
-  font-size: 13px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--coral-deep);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink);
   user-select: none;
   cursor: grab;
+}
+
+/* 品牌圆点：刻意呼应全站“温度点”签名元素，
+   让窗口标识与产品内核（给每个念头打温度）产生关联，而不是孤立的 logo。 */
+.brand-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 40%, var(--glow), var(--coral));
+  box-shadow: 0 0 0 3px rgba(224, 138, 114, 0.16);
+  flex: none;
 }
 
 .drag-spacer {
@@ -111,14 +99,12 @@ body {
 }
 
 .tab-hint {
-  margin-left: 2px;
+  margin-left: 8px;
   align-self: center;
   font-size: 11px;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   color: var(--ink-soft);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 1px 7px;
+  opacity: 0.75;
   user-select: none;
 }
 
@@ -829,6 +815,16 @@ body {
   color: var(--coral-deep);
 }
 
+/* 设置（应用操作）与窗口控制之间的一道细分割线：
+   编码“应用动作 | 窗口控制”的真实分组，而不是把两类控件丢在一起。 */
+.win-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--line);
+  margin: 0 2px;
+  flex: none;
+}
+
 .settings-backdrop {
   position: fixed;
   inset: 0;
@@ -1078,20 +1074,6 @@ body {
 
 .update-badge:active {
   transform: translateY(0);
-}
-
-.check-update:hover {
-  color: var(--coral-deep);
-}
-
-.spin {
-  animation: toast-spin 0.8s linear infinite;
-}
-
-@keyframes toast-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .toast {
