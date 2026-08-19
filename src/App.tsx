@@ -1,8 +1,11 @@
 import { useEffect, useState, type MouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { Capture } from "./Capture";
 import { Review } from "./Review";
 import { Settings } from "./Settings";
+import type { UpdateInfo } from "./types";
 import "./App.css";
 
 type ResizeDir =
@@ -79,12 +82,38 @@ function MaximizeIcon({ maximized }: { maximized: boolean }) {
   );
 }
 
+function RefreshIcon({ spinning }: { spinning: boolean }) {
+  return (
+    <svg
+      className={spinning ? "spin" : undefined}
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 3v6h-6" />
+    </svg>
+  );
+}
+
 type View = "capture" | "review";
 
 export default function App() {
   const [view, setView] = useState<View>("capture");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isMax, setIsMax] = useState(false);
+  const [version, setVersion] = useState("");
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [toast, setToast] = useState<
+    { kind: "ok" | "info" | "error"; msg: string } | null
+  >(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +125,63 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  // 启动静默检查一次更新：失败（断网 / 限流等）一律忽略，不打扰用户。
+  useEffect(() => {
+    let cancelled = false;
+    invoke<UpdateInfo>("check_update")
+      .then((info) => {
+        if (!cancelled && info.has_update) setUpdateInfo(info);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // 取当前版本号，仅用于设置页展示。
+  useEffect(() => {
+    getVersion().then(setVersion).catch(() => {});
+  }, []);
+
+  // toast 自动消失。
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  function showToast(kind: "ok" | "info" | "error", msg: string) {
+    setToast({ kind, msg });
+  }
+
+  // 手动检查：失败要给出具体错误；无更新则提示已是最新。
+  async function manualCheck() {
+    if (checking) return;
+    setChecking(true);
+    try {
+      const info = await invoke<UpdateInfo>("check_update");
+      setUpdateInfo(info);
+      if (info.has_update) {
+        showToast("info", `发现新版本 v${info.latest}`);
+      } else {
+        showToast("ok", "已经是最新版本");
+      }
+    } catch (e) {
+      showToast("error", `检查更新失败：${String(e)}`);
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  // 点击 New 标记：打开 Release 页（标记本身不消失，留到你真更新）。
+  function openRelease() {
+    const url = updateInfo?.url;
+    if (!url) return;
+    invoke("open_release_page", { url }).catch((e) =>
+      showToast("error", `打开失败：${String(e)}`),
+    );
+  }
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -132,6 +218,15 @@ export default function App() {
         <span className="brand">
           Into · 最近
         </span>
+        {updateInfo?.has_update && (
+          <button
+            className="update-badge"
+            onClick={openRelease}
+            title={`发现新版本 v${updateInfo.latest}，点击前往 GitHub 查看`}
+          >
+            New
+          </button>
+        )}
         <div className="drag-spacer" />
         <nav
           className="tabs"
@@ -158,6 +253,15 @@ export default function App() {
           onClick={() => setSettingsOpen(true)}
         >
           <GearIcon />
+        </button>
+        <button
+          className="win-btn check-update"
+          aria-label="检查更新"
+          title="检查更新"
+          onClick={manualCheck}
+          disabled={checking}
+        >
+          <RefreshIcon spinning={checking} />
         </button>
         <div className="window-controls">
           <button
@@ -190,7 +294,20 @@ export default function App() {
         {view === "capture" ? <Capture /> : <Review />}
       </main>
 
-      <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <Settings
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        version={version}
+      />
+      {toast && (
+        <div
+          className={`toast toast-${toast.kind}`}
+          role="status"
+          onClick={() => setToast(null)}
+        >
+          {toast.msg}
+        </div>
+      )}
     </div>
   );
 }

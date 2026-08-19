@@ -4,12 +4,14 @@ use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 use jieba_rs::Jieba;
+use std::time::Duration;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager, State,
 };
 use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_shell::ShellExt;
 
 #[derive(Serialize)]
 struct Entry {
@@ -520,6 +522,86 @@ fn review(
     review_db(&conn, start_ms, end_ms, search.as_deref())
 }
 
+/// 从 GitHub `/releases/latest` 的 JSON 响应里取出 `tag_name`。
+/// 抽成纯函数以便单测，网络部分只负责把响应文本喂进来。
+fn parse_latest_tag(json: &str) -> Result<String, String> {
+    let v: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| format!("解析 GitHub 响应失败：{e}"))?;
+    v.get("tag_name")
+        .and_then(|t| t.as_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| "GitHub 响应缺少 tag_name".into())
+}
+
+/// 去掉版本号前导的 `v`（`v0.3.0` -> `0.3.0`），方便语义化比较。
+fn normalize_version(v: &str) -> String {
+    v.trim_start_matches('v').to_string()
+}
+
+/// 比较 `latest` 是否比 `current` 更新（忽略前导 v，按语义化版本比较）。
+fn is_newer(current: &str, latest: &str) -> Result<bool, String> {
+    let c = semver::Version::parse(&normalize_version(current))
+        .map_err(|e| format!("当前版本号非法：{e}"))?;
+    let l = semver::Version::parse(&normalize_version(latest))
+        .map_err(|e| format!("最新版本号非法：{e}"))?;
+    Ok(l > c)
+}
+
+#[derive(Serialize)]
+struct UpdateInfo {
+    has_update: bool,
+    current: String,
+    latest: String,
+    url: String,
+}
+
+/// 检查 GitHub 上是否有比当前版本更新的 Release。
+/// 仅一次只读请求；失败（断网、限流、非 2xx）一律向上抛出，由前端决定静默还是提示。
+#[tauri::command]
+async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
+    let current = app.package_info().version.to_string();
+    let api = "https://api.github.com/repos/LuckyCurve/Into/releases/latest";
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .user_agent("Into")
+        .build()
+        .map_err(|e| format!("创建请求客户端失败：{e}"))?;
+    let resp = client
+        .get(api)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| format!("无法连接 GitHub：{e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("GitHub 返回状态 {}", resp.status()));
+    }
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取 GitHub 响应失败：{e}"))?;
+    let tag = parse_latest_tag(&body)?;
+    let latest = normalize_version(&tag);
+    let has = is_newer(&current, &latest)?;
+    let url = format!("https://github.com/LuckyCurve/Into/releases/tag/{latest}");
+    Ok(UpdateInfo {
+        has_update: has,
+        current: normalize_version(&current),
+        latest,
+        url,
+    })
+}
+
+/// 用系统默认浏览器打开 Release 页面（仅允许 https，避免任意 scheme）。
+#[tauri::command]
+fn open_release_page(url: String, app: tauri::AppHandle) -> Result<(), String> {
+    if !url.starts_with("https://") {
+        return Err("仅允许打开 https 链接".into());
+    }
+    app.shell()
+        .open(url, None)
+        .map_err(|e| format!("打开失败：{e}"))
+}
+
 /// 是否以「隐藏方式」启动：仅当进程参数包含 `--hidden` 时成立。
 /// 开机自启场景下由 autostart 插件附带该参数，使窗口静默进入系统托盘。
 fn should_start_hidden<I, S>(args: I) -> bool
@@ -533,6 +615,7 @@ where
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec!["--hidden"]),
@@ -558,7 +641,9 @@ pub fn run() {
             unblock_keyword,
             list_blocked_terms,
             generate_test_data,
-            clear_all_entries
+            clear_all_entries,
+            check_update,
+            open_release_page
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -819,5 +904,44 @@ mod tests {
         // 仅前缀 / 大小写不同不应命中
         assert!(!should_start_hidden(vec!["--hidden-x".to_string()]));
         assert!(!should_start_hidden(vec!["--HIDDEN".to_string()]));
+    }
+
+    #[test]
+    fn parse_latest_tag_reads_tag_name() {
+        let json = r#"{"tag_name":"v0.4.0","name":"Into v0.4.0","html_url":"x"}"#;
+        assert_eq!(parse_latest_tag(json).unwrap(), "v0.4.0");
+    }
+
+    #[test]
+    fn parse_latest_tag_errors_when_missing_or_malformed() {
+        // 缺少 tag_name 字段
+        assert!(parse_latest_tag(r#"{"name":"x"}"#).is_err());
+        // 不是合法 JSON
+        assert!(parse_latest_tag("not json at all").is_err());
+    }
+
+    #[test]
+    fn normalize_strips_leading_v() {
+        assert_eq!(normalize_version("v0.3.0"), "0.3.0");
+        assert_eq!(normalize_version("0.3.0"), "0.3.0");
+    }
+
+    #[test]
+    fn is_newer_compares_semver() {
+        // 有更新
+        assert!(is_newer("0.3.0", "v0.4.0").unwrap());
+        // 完全相同
+        assert!(!is_newer("0.3.0", "0.3.0").unwrap());
+        // 当前比 latest 还新（如本地开发版）
+        assert!(!is_newer("0.4.0", "0.3.0").unwrap());
+        // 语义化比较正确性：0.10.0 > 0.3.0（纯字符串比较会错判）
+        assert!(is_newer("0.3.0", "0.10.0").unwrap());
+        assert!(!is_newer("0.10.0", "0.3.0").unwrap());
+    }
+
+    #[test]
+    fn is_newer_rejects_illegal_version() {
+        assert!(is_newer("banana", "0.4.0").is_err());
+        assert!(is_newer("0.3.0", "").is_err());
     }
 }

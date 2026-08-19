@@ -20,13 +20,14 @@ export function decideAutostartAction(current: boolean): {
 type Props = {
   open: boolean;
   onClose: () => void;
+  version?: string;
 };
 
 /**
  * 简单设置面板：目前承载「开机自启」开关。
  * 关闭面板即销毁，避免状态残留。
  */
-export function Settings({ open, onClose }: Props) {
+export function Settings({ open, onClose, version }: Props) {
   const [enabled, setEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -277,6 +278,14 @@ export function Settings({ open, onClose }: Props) {
               ))}
             </div>
           )}
+        </div>
+
+        <div className="settings-divider" />
+        <div className="settings-about">
+          <div className="settings-name">Into · 兴趣雷达</div>
+          <div className="settings-desc">
+            版本 v{version || "…"} · 数据全部留在本地
+          </div>
         </div>
       </div>
     </div>

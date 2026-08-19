@@ -1054,3 +1054,81 @@ body {
   font-size: 13px;
   color: var(--ink-soft);
 }
+
+/* ---------- 更新检查（New 标记 / 检查按钮 / 提示） ---------- */
+.update-badge {
+  border: none;
+  background: linear-gradient(180deg, var(--coral), var(--coral-deep));
+  color: #fff;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(207, 106, 84, 0.3);
+  transition: transform 0.12s ease, box-shadow 0.2s ease;
+}
+
+.update-badge:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(207, 106, 84, 0.38);
+}
+
+.update-badge:active {
+  transform: translateY(0);
+}
+
+.check-update:hover {
+  color: var(--coral-deep);
+}
+
+.spin {
+  animation: toast-spin 0.8s linear infinite;
+}
+
+@keyframes toast-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.toast {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 120;
+  max-width: calc(100vw - 40px);
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--paper-soft);
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 30px rgba(70, 58, 61, 0.18);
+  cursor: pointer;
+  animation: fade-in 0.15s ease;
+}
+
+.toast-info {
+  color: var(--coral-deep);
+}
+
+.toast-ok {
+  color: #2f7d4f;
+}
+
+.toast-error {
+  color: var(--rose);
+  border-color: var(--rose);
+}
+
+.settings-about {
+  padding: 14px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
