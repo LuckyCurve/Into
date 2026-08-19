@@ -97,6 +97,22 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Tab") return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      // 焦点在可编辑元素（输入文字 / 下拉等）内时，Tab 保持默认行为（在表单中移动焦点），不拦截
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) {
+        return;
+      }
+      e.preventDefault();
+      setView((v) => (v === "capture" ? "review" : "capture"));
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   function toggleMaximize() {
     const w = getCurrentWindow();
     w.toggleMaximize()
@@ -117,7 +133,11 @@ export default function App() {
           Into · 最近
         </span>
         <div className="drag-spacer" />
-        <nav className="tabs">
+        <nav
+          className="tabs"
+          title="按 Tab 在「写一点」和「看看」之间切换"
+          aria-keyshortcuts="Tab"
+        >
           <button
             className={"tab" + (view === "capture" ? " on" : "")}
             onClick={() => setView("capture")}
@@ -130,6 +150,7 @@ export default function App() {
           >
             看看
           </button>
+          <span className="tab-hint" aria-hidden="true">Tab ⇄</span>
         </nav>
         <button
           className="win-btn gear"

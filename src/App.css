@@ -107,6 +107,19 @@ body {
 .tabs {
   display: flex;
   gap: 6px;
+  align-items: center;
+}
+
+.tab-hint {
+  margin-left: 2px;
+  align-self: center;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 7px;
+  user-select: none;
 }
 
 .tab {
