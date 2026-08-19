@@ -11,7 +11,7 @@ use tauri::{
     Manager, State,
 };
 use tauri_plugin_autostart::MacosLauncher;
-use tauri_plugin_shell::ShellExt;
+use tauri_plugin_opener::OpenerExt;
 
 #[derive(Serialize)]
 struct Entry {
@@ -597,8 +597,8 @@ fn open_release_page(url: String, app: tauri::AppHandle) -> Result<(), String> {
     if !url.starts_with("https://") {
         return Err("仅允许打开 https 链接".into());
     }
-    app.shell()
-        .open(url, None)
+    app.opener()
+        .open_url(url, None::<String>)
         .map_err(|e| format!("打开失败：{e}"))
 }
 
@@ -615,7 +615,7 @@ where
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec!["--hidden"]),

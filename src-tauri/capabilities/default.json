@@ -15,7 +15,6 @@
     "core:window:allow-set-focus",
     "autostart:allow-enable",
     "autostart:allow-disable",
-    "autostart:allow-is-enabled",
-    "shell:allow-open"
+    "autostart:allow-is-enabled"
   ]
 }
