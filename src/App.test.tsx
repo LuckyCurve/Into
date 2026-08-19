@@ -23,6 +23,9 @@ const invoke = vi.hoisted(() =>
     if (cmd === "open_release_page") {
       return Promise.resolve();
     }
+    if (cmd === "list_blocked_terms") {
+      return Promise.resolve([]);
+    }
     return Promise.resolve(undefined);
   }),
 );
@@ -94,14 +97,16 @@ describe("顶栏 · 更新检查", () => {
       url: "",
     };
     render(<App />);
-    fireEvent.click(await screen.findByLabelText("检查更新"));
+    fireEvent.click(await screen.findByLabelText("设置"));
+    fireEvent.click(await screen.findByRole("button", { name: "检查更新" }));
     expect(await screen.findByText("已经是最新版本")).toBeTruthy();
   });
 
   it("手动检查：失败给出具体错误", async () => {
     state.reject = true;
     render(<App />);
-    fireEvent.click(await screen.findByLabelText("检查更新"));
+    fireEvent.click(await screen.findByLabelText("设置"));
+    fireEvent.click(await screen.findByRole("button", { name: "检查更新" }));
     const err = await screen.findByText(/检查更新失败/);
     expect(err).toBeTruthy();
   });
