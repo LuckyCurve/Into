@@ -20,6 +20,21 @@ struct Entry {
     score: i64,
     created_at: i64,
     updated_at: Option<i64>,
+    /// 1 = 由「生成示例数据」插入的占位记录；0 = 用户真实记录。
+    is_sample: i64,
+}
+
+#[derive(Serialize)]
+struct DbStats {
+    /// 总记录数。
+    total: i64,
+    /// 示例记录数（is_sample = 1）。
+    sample: i64,
+    /// 真实记录数（is_sample = 0）。
+    real: i64,
+    /// 仅当「全部都是示例数据」时为真：有示例、且没有真实记录。
+    /// 空库为 false（没有示例可清），混入真实记录也为 false。
+    can_clear_sample: bool,
 }
 
 #[derive(Serialize)]
@@ -164,6 +179,21 @@ fn extract_keywords(
     out
 }
 
+/// 判断表里是否存在某列（用于旧库迁移）。
+fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool, String> {
+    let sql = format!("PRAGMA table_info({table})");
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| e.to_string())?;
+    for r in rows {
+        if r.map_err(|e| e.to_string())? == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn create_schema(conn: &Connection) -> Result<(), String> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS entries (
@@ -176,6 +206,14 @@ fn create_schema(conn: &Connection) -> Result<(), String> {
         [],
     )
     .map_err(|e| e.to_string())?;
+    // 旧库（v0.5.1 之前）没有 is_sample 列：补上，并把已有行当作真实记录。
+    if !column_exists(conn, "entries", "is_sample")? {
+        conn.execute(
+            "ALTER TABLE entries ADD COLUMN is_sample INTEGER NOT NULL DEFAULT 0",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    }
     conn.execute(
         "CREATE TABLE IF NOT EXISTS blocked_terms (term TEXT PRIMARY KEY)",
         [],
@@ -197,6 +235,7 @@ fn insert_entry(
     content: &str,
     score: i64,
     created_at: i64,
+    is_sample: i64,
 ) -> Result<i64, String> {
     let content = content.trim().to_string();
     if content.is_empty() {
@@ -206,8 +245,8 @@ fn insert_entry(
         return Err("温度要在 1 到 5 之间".into());
     }
     conn.execute(
-        "INSERT INTO entries (content, score, created_at, updated_at) VALUES (?1, ?2, ?3, NULL)",
-        params![content, score, created_at],
+        "INSERT INTO entries (content, score, created_at, updated_at, is_sample) VALUES (?1, ?2, ?3, NULL, ?4)",
+        params![content, score, created_at, is_sample],
     )
     .map_err(|e| e.to_string())?;
     Ok(conn.last_insert_rowid())
@@ -235,6 +274,7 @@ fn update_entry_db(
     Ok(())
 }
 
+/// 删除一条记录（按 id，真实或示例皆可）。
 fn delete_entry_db(conn: &Connection, id: i64) -> Result<(), String> {
     conn.execute("DELETE FROM entries WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
@@ -313,8 +353,9 @@ fn seed_test_data_db(conn: &Connection, n: i64) -> Result<i64, String> {
         let day_off = ((i * 5 + (i * i) % 11) % 60) as i64;
         let hour = ((i * 7) % 20) as i64;
         let created = now - day_off * day - hour * 3_600_000;
+        // 示例数据全部打上 is_sample = 1 标记，便于后续「只清示例、不碰真实记录」。
         conn.execute(
-            "INSERT INTO entries (content, score, created_at, updated_at) VALUES (?1, ?2, ?3, NULL)",
+            "INSERT INTO entries (content, score, created_at, updated_at, is_sample) VALUES (?1, ?2, ?3, NULL, 1)",
             params![content, score, created],
         )
         .map_err(|e| e.to_string())?;
@@ -323,9 +364,40 @@ fn seed_test_data_db(conn: &Connection, n: i64) -> Result<i64, String> {
     Ok(inserted)
 }
 
-/// 删除全部记录。刻意不碰 blocked_terms——那是用户通过 ✕ 沉淀的个人偏好。
-fn clear_all_entries_db(conn: &Connection) -> Result<u64, String> {
-    conn.execute("DELETE FROM entries", [])
+/// 统计库内记录构成：总数 / 示例数 / 真实数，并据此判断「能否一键清理示例数据」。
+/// 规则：仅当存在示例记录、且没有任何真实记录时，`can_clear_sample` 为真。
+fn db_stats_db(conn: &Connection) -> Result<DbStats, String> {
+    let total: i64 = conn
+        .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    let sample: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM entries WHERE is_sample = 1",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let real = total - sample;
+    Ok(DbStats {
+        total,
+        sample,
+        real,
+        can_clear_sample: sample > 0 && real == 0,
+    })
+}
+
+/// 清理示例数据：删除全部 is_sample = 1 的记录。
+/// 守卫：只要混入任何一条真实记录就拒绝一键清理——这个按钮本就是为清示例数据而设，
+/// 绝不能误删用户的真实记录。刻意不碰 blocked_terms——那是用户通过 ✕ 沉淀的个人偏好。
+fn clear_sample_data_db(conn: &Connection) -> Result<u64, String> {
+    let stats = db_stats_db(conn)?;
+    if stats.real > 0 {
+        return Err("数据库里混入了真实记录，无法一键清理示例数据".into());
+    }
+    if stats.sample == 0 {
+        return Err("当前没有示例数据可清理".into());
+    }
+    conn.execute("DELETE FROM entries WHERE is_sample = 1", [])
         .map_err(|e| e.to_string())?;
     Ok(conn.changes() as u64)
 }
@@ -369,7 +441,7 @@ fn query_entries(
 ) -> Result<Vec<Entry>, String> {
     let (wc, p) = build_where(start_ms, end_ms, search);
     let sql = format!(
-        "SELECT id, content, score, created_at, updated_at \
+        "SELECT id, content, score, created_at, updated_at, is_sample \
          FROM entries {} ORDER BY created_at DESC LIMIT ?",
         wc
     );
@@ -384,6 +456,7 @@ fn query_entries(
                 score: row.get(2)?,
                 created_at: row.get(3)?,
                 updated_at: row.get(4)?,
+                is_sample: row.get(5)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -461,7 +534,8 @@ fn review_db(
 #[tauri::command]
 fn add_entry(content: String, score: i64, state: State<'_, Mutex<Connection>>) -> Result<i64, String> {
     let conn = state.lock().map_err(|e| e.to_string())?;
-    insert_entry(&conn, &content, score, now_ms())
+    // 用户手动录入的永远是真实记录（is_sample = 0）。
+    insert_entry(&conn, &content, score, now_ms(), 0)
 }
 
 #[tauri::command]
@@ -506,9 +580,15 @@ fn generate_test_data(state: State<'_, Mutex<Connection>>) -> Result<i64, String
 }
 
 #[tauri::command]
-fn clear_all_entries(state: State<'_, Mutex<Connection>>) -> Result<u64, String> {
+fn db_stats(state: State<'_, Mutex<Connection>>) -> Result<DbStats, String> {
     let conn = state.lock().map_err(|e| e.to_string())?;
-    clear_all_entries_db(&conn)
+    db_stats_db(&conn)
+}
+
+#[tauri::command]
+fn clear_sample_data(state: State<'_, Mutex<Connection>>) -> Result<u64, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    clear_sample_data_db(&conn)
 }
 
 #[tauri::command]
@@ -650,7 +730,8 @@ pub fn run() {
             unblock_keyword,
             list_blocked_terms,
             generate_test_data,
-            clear_all_entries,
+            db_stats,
+            clear_sample_data,
             check_update,
             open_release_page
         ])
@@ -706,7 +787,7 @@ mod tests {
     }
 
     fn add(c: &Connection, content: &str, score: i64, t: i64) -> i64 {
-        insert_entry(c, content, score, t).unwrap()
+        insert_entry(c, content, score, t, 0).unwrap()
     }
 
     #[test]
@@ -724,10 +805,10 @@ mod tests {
     #[test]
     fn rejects_empty_and_out_of_range_score() {
         let c = mem();
-        assert!(insert_entry(&c, "   ", 3, 1).is_err());
-        assert!(insert_entry(&c, "好的", 0, 1).is_err());
-        assert!(insert_entry(&c, "好的", 6, 1).is_err());
-        assert!(insert_entry(&c, "好的", 3, 1).is_ok());
+        assert!(insert_entry(&c, "   ", 3, 1, 0).is_err());
+        assert!(insert_entry(&c, "好的", 0, 1, 0).is_err());
+        assert!(insert_entry(&c, "好的", 6, 1, 0).is_err());
+        assert!(insert_entry(&c, "好的", 3, 1, 0).is_ok());
     }
 
     #[test]
@@ -831,15 +912,36 @@ mod tests {
         assert!(list.iter().any(|e| e.content.contains("咖啡")));
         // 分数都在合法范围
         assert!(list.iter().all(|e| (1..=5).contains(&e.score)));
+        // 全部标记为示例数据
+        assert!(list.iter().all(|e| e.is_sample == 1));
+
+        let stats = db_stats_db(&c).unwrap();
+        assert_eq!(stats.total, 40);
+        assert_eq!(stats.sample, 40);
+        assert_eq!(stats.real, 0);
+        // 全是示例 → 允许一键清理
+        assert!(stats.can_clear_sample);
     }
 
     #[test]
-    fn clear_all_entries_removes_rows_but_keeps_blocklist() {
+    fn db_stats_empty_db() {
+        let c = mem();
+        let stats = db_stats_db(&c).unwrap();
+        assert_eq!(stats.total, 0);
+        assert_eq!(stats.sample, 0);
+        assert_eq!(stats.real, 0);
+        // 空库没有示例可清
+        assert!(!stats.can_clear_sample);
+    }
+
+    #[test]
+    fn clear_sample_data_only_when_all_sample() {
         let c = mem();
         seed_test_data_db(&c, 10).unwrap();
         block_term_db(&c, "感觉").unwrap();
         assert_eq!(query_entries(&c, None, None, None, 100).unwrap().len(), 10);
-        let removed = clear_all_entries_db(&c).unwrap();
+        // 全是示例 → 可以清
+        let removed = clear_sample_data_db(&c).unwrap();
         assert_eq!(removed, 10);
         assert_eq!(query_entries(&c, None, None, None, 100).unwrap().len(), 0);
         // 屏蔽词表保留
@@ -847,12 +949,82 @@ mod tests {
     }
 
     #[test]
+    fn clear_sample_data_refuses_when_real_present() {
+        let c = mem();
+        seed_test_data_db(&c, 10).unwrap();
+        // 混入一条真实记录
+        insert_entry(&c, "用户真实记录", 4, 123, 0).unwrap();
+        let stats = db_stats_db(&c).unwrap();
+        assert_eq!(stats.total, 11);
+        assert_eq!(stats.sample, 10);
+        assert_eq!(stats.real, 1);
+        // 混有真实记录 → 不允许一键清理
+        assert!(!stats.can_clear_sample);
+        // 调用会被守卫拒绝，且不会删除任何行
+        assert!(clear_sample_data_db(&c).is_err());
+        assert_eq!(query_entries(&c, None, None, None, 100).unwrap().len(), 11);
+    }
+
+    #[test]
+    fn clear_sample_data_noop_on_empty() {
+        let c = mem();
+        // 空库：can_clear_sample 为假，清理应被守卫拒绝（没有示例可清）
+        assert!(!db_stats_db(&c).unwrap().can_clear_sample);
+        assert!(clear_sample_data_db(&c).is_err());
+    }
+
+    #[test]
+    fn migration_preserves_existing_historical_rows_as_real() {
+        let c = Connection::open_in_memory().unwrap();
+        // 复刻历史版本（v0.1.0–v0.5.1）的建表语句：无 is_sample 列。
+        c.execute(
+            "CREATE TABLE entries (id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT NOT NULL, score INTEGER NOT NULL CHECK(score BETWEEN 1 AND 5), created_at INTEGER NOT NULL, updated_at INTEGER)",
+            [],
+        )
+        .unwrap();
+        c.execute(
+            "CREATE TABLE IF NOT EXISTS blocked_terms (term TEXT PRIMARY KEY)",
+            [],
+        )
+        .unwrap();
+        // 历史数据：由老版本代码写入的行（INSERT 不含 is_sample，该列尚不存在）。
+        c.execute(
+            "INSERT INTO entries (content, score, created_at, updated_at) VALUES ('老用户记录A', 5, 1000, NULL)",
+            [],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO entries (content, score, created_at, updated_at) VALUES ('老用户记录B', 2, 2000, 999)",
+            [],
+        )
+        .unwrap();
+        // 模拟升级到新版本：运行新代码的建表 / 迁移逻辑。
+        create_schema(&c).unwrap();
+        // 迁移后，既有历史行应被默认当作真实记录（is_sample = 0），不会被误判为示例。
+        let rows = query_entries(&c, None, None, None, 10).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|e| e.is_sample == 0));
+        let stats = db_stats_db(&c).unwrap();
+        assert_eq!(stats.total, 2);
+        assert_eq!(stats.sample, 0);
+        assert_eq!(stats.real, 2);
+        // 全是真实记录 → 禁用「清理示例数据」，避免误删。
+        assert!(!stats.can_clear_sample);
+        // 迁移后新代码仍可正常写入示例与读取。
+        seed_test_data_db(&c, 3).unwrap();
+        let stats2 = db_stats_db(&c).unwrap();
+        assert_eq!(stats2.total, 5);
+        assert_eq!(stats2.sample, 3);
+        assert_eq!(stats2.real, 2);
+    }
+
+    #[test]
     fn extract_keywords_segments_and_filters() {
         let c = mem();
-        insert_entry(&c, "早上喝咖啡，刚刚好", 5, 1000).unwrap();
-        insert_entry(&c, "又去那家咖啡店坐了坐", 4, 2000).unwrap();
-        insert_entry(&c, "雨天窝着看电影，舒服", 3, 3000).unwrap();
-        insert_entry(&c, "今天也看了电影，感觉不错", 4, 4000).unwrap();
+        insert_entry(&c, "早上喝咖啡，刚刚好", 5, 1000, 0).unwrap();
+        insert_entry(&c, "又去那家咖啡店坐了坐", 4, 2000, 0).unwrap();
+        insert_entry(&c, "雨天窝着看电影，舒服", 3, 3000, 0).unwrap();
+        insert_entry(&c, "今天也看了电影，感觉不错", 4, 4000, 0).unwrap();
         let entries = query_entries(&c, None, None, None, 100).unwrap();
         let kws = extract_keywords(&entries, &[], 2, 28);
         let terms: Vec<&str> = kws.iter().map(|k| k.term.as_str()).collect();

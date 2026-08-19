@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { isEnabled, enable, disable } from "@tauri-apps/plugin-autostart";
 import { invoke } from "@tauri-apps/api/core";
+import type { DbStats } from "./types";
 
 export type AutostartAction = "enable" | "disable";
 
@@ -47,6 +48,15 @@ export function Settings({
   const [clearing, setClearing] = useState(false);
   const [blocked, setBlocked] = useState<string[]>([]);
   const [newTerm, setNewTerm] = useState("");
+  // 数据库记录构成：用于驱动「生成 / 清理示例数据」按钮的可用状态。
+  const [stats, setStats] = useState<DbStats | null>(null);
+
+  // 读取数据库记录构成（总 / 示例 / 真实 + 是否可清示例）。
+  function loadStats() {
+    invoke<DbStats>("db_stats")
+      .then(setStats)
+      .catch(() => {});
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -59,6 +69,7 @@ export function Settings({
     invoke<string[]>("list_blocked_terms")
       .then((list) => !cancelled && setBlocked(list))
       .catch(() => {});
+    if (!cancelled) loadStats();
     return () => {
       cancelled = true;
     };
@@ -82,12 +93,18 @@ export function Settings({
     }
   }
 
+  // 数据库为空时才允许生成示例数据；一旦已有任何记录（无论真实还是示例）就禁止。
+  const generateDisabled = (stats?.total ?? 0) > 0;
+  // 仅当「全部都是示例数据」时才允许清理；混入真实记录或无示例时禁用。
+  const canClearSample = stats?.can_clear_sample ?? false;
+
   async function generateSamples() {
-    if (generating) return;
+    if (generating || generateDisabled) return;
     setGenerating(true);
     try {
       await invoke("generate_test_data");
       window.dispatchEvent(new Event("into:entries-changed"));
+      loadStats();
     } catch (e) {
       console.error("生成示例数据失败", e);
     } finally {
@@ -96,14 +113,15 @@ export function Settings({
     }
   }
 
-  async function clearAll() {
-    if (clearing) return;
+  async function clearSample() {
+    if (clearing || !canClearSample) return;
     setClearing(true);
     try {
-      await invoke("clear_all_entries");
+      await invoke("clear_sample_data");
       window.dispatchEvent(new Event("into:entries-changed"));
+      loadStats();
     } catch (e) {
-      console.error("清空失败", e);
+      console.error("清理示例数据失败", e);
     } finally {
       setClearing(false);
       setConfirmClear(false);
@@ -178,7 +196,9 @@ export function Settings({
           <div className="settings-label">
             <div className="settings-name">生成示例数据</div>
             <div className="settings-desc">
-              插入一批本地示例记录，用于预览分析效果（不含你的真实数据）
+              {generateDisabled
+                ? "数据库已有记录，无法再生成示例（可先清理示例数据）"
+                : "插入一批本地示例记录，用于预览分析效果（不含你的真实数据）"}
             </div>
           </div>
           {confirmGenerate ? (
@@ -186,7 +206,7 @@ export function Settings({
               <button
                 type="button"
                 className="ghost danger"
-                disabled={generating}
+                disabled={generating || generateDisabled}
                 onClick={generateSamples}
               >
                 {generating ? "生成中…" : "确认生成？"}
@@ -203,6 +223,8 @@ export function Settings({
             <button
               type="button"
               className="ghost"
+              disabled={generateDisabled}
+              title={generateDisabled ? "数据库已有记录，无法生成示例数据" : ""}
               onClick={() => setConfirmGenerate(true)}
             >
               生成示例数据
@@ -212,9 +234,13 @@ export function Settings({
 
         <div className="settings-row">
           <div className="settings-label">
-            <div className="settings-name">清空全部</div>
+            <div className="settings-name">清理示例数据</div>
             <div className="settings-desc">
-              删除全部记录（不可恢复；保留你的屏蔽词偏好）
+              {canClearSample
+                ? "删除全部示例数据（不可恢复；保留你的屏蔽词偏好）"
+                : stats && stats.real > 0
+                ? "数据库里混入了真实记录，不能一键清理示例数据"
+                : "当前没有示例数据可清理"}
             </div>
           </div>
           {confirmClear ? (
@@ -222,10 +248,10 @@ export function Settings({
               <button
                 type="button"
                 className="ghost danger"
-                disabled={clearing}
-                onClick={clearAll}
+                disabled={clearing || !canClearSample}
+                onClick={clearSample}
               >
-                {clearing ? "清空中…" : "确认清空？"}
+                {clearing ? "清空中…" : "确认清理？"}
               </button>
               <button
                 type="button"
@@ -239,9 +265,11 @@ export function Settings({
             <button
               type="button"
               className="ghost danger"
+              disabled={!canClearSample}
+              title={!canClearSample ? "仅当数据库全部是示例数据时才可清理" : ""}
               onClick={() => setConfirmClear(true)}
             >
-              清空全部
+              清理示例数据
             </button>
           )}
         </div>

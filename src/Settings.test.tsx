@@ -14,9 +14,15 @@ const { enable, disable, isEnabled } = vi.hoisted(() => ({
   isEnabled: vi.fn(() => Promise.resolve(false)),
 }));
 
+const dbStats = vi.hoisted(() => ({
+  // 默认：空库（total=0），生成按钮可用、清理按钮禁用。
+  value: { total: 0, sample: 0, real: 0, can_clear_sample: false },
+}));
+
 const invoke = vi.hoisted(() =>
   vi.fn((cmd: string) => {
     if (cmd === "list_blocked_terms") return Promise.resolve(["咖啡", "电影"]);
+    if (cmd === "db_stats") return Promise.resolve(dbStats.value);
     return Promise.resolve(undefined);
   }),
 );
@@ -32,6 +38,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  dbStats.value = { total: 0, sample: 0, real: 0, can_clear_sample: false };
 });
 
 describe("decideAutostartAction", () => {
@@ -98,6 +105,58 @@ describe("设置页 · 屏蔽的词", () => {
     fireEvent.click(screen.getByText("屏蔽"));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("block_keyword", { term: "测试词" }),
+    );
+  });
+});
+
+describe("设置页 · 示例数据生成与清理", () => {
+  it("空库时「生成示例数据」可点击，『清理示例数据』不可用", async () => {
+    dbStats.value = { total: 0, sample: 0, real: 0, can_clear_sample: false };
+    render(<Settings open={true} onClose={() => {}} />);
+    const gen = await screen.findByRole("button", { name: "生成示例数据" });
+    expect(gen.disabled).toBe(false);
+    const clear = screen.getByRole("button", { name: "清理示例数据" });
+    expect(clear.disabled).toBe(true);
+  });
+
+  it("数据库已有记录时，「生成示例数据」被禁用", async () => {
+    dbStats.value = { total: 3, sample: 3, real: 0, can_clear_sample: true };
+    render(<Settings open={true} onClose={() => {}} />);
+    const gen = await screen.findByRole("button", { name: "生成示例数据" });
+    expect(gen.disabled).toBe(true);
+  });
+
+  it("全部是示例数据时，「清理示例数据」可用", async () => {
+    dbStats.value = { total: 5, sample: 5, real: 0, can_clear_sample: true };
+    render(<Settings open={true} onClose={() => {}} />);
+    const clear = await screen.findByRole("button", { name: "清理示例数据" });
+    expect(clear.disabled).toBe(false);
+  });
+
+  it("混入真实记录时，「清理示例数据」被禁用", async () => {
+    dbStats.value = { total: 6, sample: 5, real: 1, can_clear_sample: false };
+    render(<Settings open={true} onClose={() => {}} />);
+    const clear = await screen.findByRole("button", { name: "清理示例数据" });
+    expect(clear.disabled).toBe(true);
+  });
+
+  it("点击「清理示例数据」确认后调用 clear_sample_data", async () => {
+    dbStats.value = { total: 5, sample: 5, real: 0, can_clear_sample: true };
+    render(<Settings open={true} onClose={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "清理示例数据" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认清理？" }));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("clear_sample_data"),
+    );
+  });
+
+  it("点击「生成示例数据」确认后调用 generate_test_data", async () => {
+    dbStats.value = { total: 0, sample: 0, real: 0, can_clear_sample: false };
+    render(<Settings open={true} onClose={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "生成示例数据" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认生成？" }));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("generate_test_data"),
     );
   });
 });
