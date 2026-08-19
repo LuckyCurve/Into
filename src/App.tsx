@@ -60,51 +60,17 @@ function GearIcon() {
   );
 }
 
-function MaximizeIcon({ maximized }: { maximized: boolean }) {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {maximized ? (
-        <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3" />
-      ) : (
-        <rect x="4" y="4" width="16" height="16" rx="1.5" />
-      )}
-    </svg>
-  );
-}
-
 type View = "capture" | "review";
 
 export default function App() {
   const [view, setView] = useState<View>("capture");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [isMax, setIsMax] = useState(false);
   const [version, setVersion] = useState("");
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [checking, setChecking] = useState(false);
   const [toast, setToast] = useState<
     { kind: "ok" | "info" | "error"; msg: string } | null
   >(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    getCurrentWindow()
-      .isMaximized()
-      .then((m) => !cancelled && setIsMax(m))
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // 启动静默检查一次更新：失败（断网 / 限流等）一律忽略，不打扰用户。
   useEffect(() => {
@@ -179,14 +145,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  function toggleMaximize() {
-    const w = getCurrentWindow();
-    w.toggleMaximize()
-      .then(() => w.isMaximized())
-      .then(setIsMax)
-      .catch(() => {});
-  }
-
   return (
     <div className="app">
       <div className="resize-frame" />
@@ -243,14 +201,6 @@ export default function App() {
             onClick={() => void getCurrentWindow().minimize()}
           >
             –
-          </button>
-          <button
-            className="win-btn"
-            aria-label={isMax ? "还原窗口" : "最大化"}
-            aria-pressed={isMax}
-            onClick={toggleMaximize}
-          >
-            <MaximizeIcon maximized={isMax} />
           </button>
           <button
             className="win-btn close"

@@ -37,12 +37,10 @@ vi.mock("@tauri-apps/api/app", () => ({ getVersion }));
 
 const getCurrentWindow = vi.hoisted(() =>
   vi.fn(() => ({
-    isMaximized: () => Promise.resolve(false),
     startDragging: () => Promise.resolve(),
     startResizeDragging: () => Promise.resolve(),
     minimize: () => Promise.resolve(),
     hide: () => Promise.resolve(),
-    toggleMaximize: () => Promise.resolve(),
     setFocus: () => Promise.resolve(),
     show: () => Promise.resolve(),
   })),
