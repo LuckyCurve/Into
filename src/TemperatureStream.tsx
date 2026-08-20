@@ -1,4 +1,5 @@
 import type { DayBucket } from "./analytics";
+import { formatMD } from "./format";
 
 interface Props {
   buckets: DayBucket[];
@@ -6,11 +7,6 @@ interface Props {
 
 const H = 120;
 const W = 100;
-
-function fmtMD(ts: number): string {
-  const d = new Date(ts);
-  return `${d.getMonth() + 1}月${d.getDate()}日`;
-}
 
 export function TemperatureStream({ buckets }: Props) {
   if (buckets.length === 0) return null;
@@ -86,9 +82,9 @@ export function TemperatureStream({ buckets }: Props) {
         />
       </svg>
       <div className="stream-axis">
-        <span>{fmtMD(buckets[0].ts)}</span>
+        <span>{formatMD(buckets[0].ts)}</span>
         <span className="stream-avg">平均 {avgAll.toFixed(1)} 度</span>
-        <span>{fmtMD(buckets[buckets.length - 1].ts)}</span>
+        <span>{formatMD(buckets[buckets.length - 1].ts)}</span>
       </div>
     </div>
   );

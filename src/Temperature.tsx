@@ -27,7 +27,7 @@ export function Temperature({ value, onChange, readOnly }: Props) {
       ))}
       {!readOnly && (
         <span className="temperature-word">
-          {value !== null ? TEMPERATURE_WORDS[value] : " "}
+          {value !== null ? TEMPERATURE_WORDS[value - 1] : " "}
         </span>
       )}
     </div>

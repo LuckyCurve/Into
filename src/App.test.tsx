@@ -7,8 +7,8 @@ import type { UpdateInfo } from "./types";
 const state = vi.hoisted(() => ({
   update: {
     has_update: false,
-    current: "0.3.0",
-    latest: "0.3.0",
+    current: "0.6.1",
+    latest: "0.6.1",
     url: "",
   } as UpdateInfo,
   reject: false,
@@ -32,7 +32,7 @@ const invoke = vi.hoisted(() =>
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
-const getVersion = vi.hoisted(() => vi.fn(() => Promise.resolve("0.3.0")));
+const getVersion = vi.hoisted(() => vi.fn(() => Promise.resolve("0.6.1")));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion }));
 
 const getCurrentWindow = vi.hoisted(() =>
@@ -51,15 +51,15 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   state.reject = false;
-  state.update = { has_update: false, current: "0.3.0", latest: "0.3.0", url: "" };
+  state.update = { has_update: false, current: "0.6.1", latest: "0.6.1", url: "" };
 });
 
 describe("顶栏 · 更新检查", () => {
   it("无更新时不显示 New 标记", async () => {
     state.update = {
       has_update: false,
-      current: "0.3.0",
-      latest: "0.3.0",
+      current: "0.6.1",
+      latest: "0.6.1",
       url: "",
     };
     render(<App />);
@@ -71,7 +71,7 @@ describe("顶栏 · 更新检查", () => {
     const url = "https://github.com/LuckyCurve/Into/releases/tag/0.4.0";
     state.update = {
       has_update: true,
-      current: "0.3.0",
+      current: "0.6.1",
       latest: "0.4.0",
       url,
     };
@@ -90,8 +90,8 @@ describe("顶栏 · 更新检查", () => {
   it("手动检查：无更新提示已是最新", async () => {
     state.update = {
       has_update: false,
-      current: "0.3.0",
-      latest: "0.3.0",
+      current: "0.6.1",
+      latest: "0.6.1",
       url: "",
     };
     render(<App />);

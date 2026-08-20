@@ -42,7 +42,7 @@ export interface Keyword {
   count: number;
 }
 
-export const TEMPERATURE_WORDS = ["", "淡淡的", "有点在意", "挺喜欢", "很喜欢", "心里发暖"];
+export const TEMPERATURE_WORDS = ["淡淡的", "有点在意", "挺喜欢", "很喜欢", "心里发暖"];
 
 export interface UpdateInfo {
   has_update: boolean;

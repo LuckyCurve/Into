@@ -1,7 +1,9 @@
 import { useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Entry } from "./types";
+import { EntryEditor } from "./EntryEditor";
 import { Temperature } from "./Temperature";
+import { formatDate } from "./format";
 
 function renderContent(text: string, hl?: string): ReactNode {
   if (!hl) return text;
@@ -25,12 +27,6 @@ function renderContent(text: string, hl?: string): ReactNode {
     i = j + q.length;
   }
   return parts;
-}
-
-function formatDate(ms: number): string {
-  const d = new Date(ms);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 interface Props {
@@ -68,16 +64,12 @@ export function EntryItem({ entry, highlight, onChanged }: Props) {
   if (editing) {
     return (
       <li className="entry-item editing">
-        <textarea
-          className="entry edit-box"
-          value={content}
-          rows={3}
-          onChange={(e) => setContent(e.target.value)}
+        <EntryEditor
+          content={content}
+          score={score}
+          onContentChange={setContent}
+          onScoreChange={setScore}
         />
-        <div className="temperature">
-          <span className="temperature-label">温度</span>
-          <Temperature value={score} onChange={setScore} />
-        </div>
         {error && <p className="item-error">{error}</p>}
         <div className="item-actions">
           <button type="button" className="ghost" onClick={save}>

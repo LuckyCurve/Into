@@ -14,7 +14,7 @@ export function ScoreSpread({ distribution }: Props) {
     <div className="spread">
       <p className="spread-read">
         你最常给 <b>{peak.score} 度</b> ·{" "}
-        {TEMPERATURE_WORDS[peak.score]}，{total} 条记录里大多带着这个温度。
+        {TEMPERATURE_WORDS[peak.score - 1]}，{total} 条记录里大多带着这个温度。
       </p>
 
       <div className="spread-bars">
@@ -22,7 +22,7 @@ export function ScoreSpread({ distribution }: Props) {
           <div className="spread-row" key={d.score}>
             <span className="spread-label">
               {d.score}
-              <i> {TEMPERATURE_WORDS[d.score]}</i>
+              <i> {TEMPERATURE_WORDS[d.score - 1]}</i>
             </span>
             <span className="spread-track">
               <span

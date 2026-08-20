@@ -2,13 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Entry, ReviewResult } from "./types";
 import { EntryItem } from "./EntryItem";
-import { temperatureSeries } from "./analytics";
+import { temperatureSeries, DAY_MS } from "./analytics";
 import { TemperatureStream } from "./TemperatureStream";
 import { ScoreSpread } from "./ScoreSpread";
 import { KeywordCloud } from "./KeywordCloud";
 
 type Preset = "7d" | "30d" | "all" | "custom";
-const DAY = 86400000;
 
 function rangeMs(
   preset: Preset,
@@ -16,12 +15,26 @@ function rangeMs(
   end: string,
 ): { start_ms: number | null; end_ms: number | null } {
   const now = Date.now();
-  if (preset === "7d") return { start_ms: now - 7 * DAY, end_ms: now + 1000 };
-  if (preset === "30d") return { start_ms: now - 30 * DAY, end_ms: now + 1000 };
+  if (preset === "7d") return { start_ms: now - 7 * DAY_MS, end_ms: now + 1000 };
+  if (preset === "30d") return { start_ms: now - 30 * DAY_MS, end_ms: now + 1000 };
   if (preset === "all") return { start_ms: null, end_ms: null };
   const s = start ? new Date(start + "T00:00:00").getTime() : null;
   const e = end ? new Date(end + "T23:59:59").getTime() + 1000 : null;
   return { start_ms: s, end_ms: e };
+}
+
+function fetchReview(
+  preset: Preset,
+  customStart: string,
+  customEnd: string,
+  appliedSearch: string,
+): Promise<ReviewResult> {
+  const { start_ms, end_ms } = rangeMs(preset, customStart, customEnd);
+  return invoke<ReviewResult>("review", {
+    start_ms,
+    end_ms,
+    search: appliedSearch || null,
+  });
 }
 
 export function Review() {
@@ -36,12 +49,7 @@ export function Review() {
 
   useEffect(() => {
     let cancelled = false;
-    const { start_ms, end_ms } = rangeMs(preset, customStart, customEnd);
-    invoke<ReviewResult>("review", {
-      start_ms,
-      end_ms,
-      search: appliedSearch || null,
-    })
+    fetchReview(preset, customStart, customEnd, appliedSearch)
       .then((r) => {
         if (!cancelled) setResult(r);
       })
@@ -59,12 +67,7 @@ export function Review() {
   }
 
   function reload() {
-    const { start_ms, end_ms } = rangeMs(preset, customStart, customEnd);
-    invoke<ReviewResult>("review", {
-      start_ms,
-      end_ms,
-      search: appliedSearch || null,
-    })
+    fetchReview(preset, customStart, customEnd, appliedSearch)
       .then(setResult)
       .catch(() => {});
   }

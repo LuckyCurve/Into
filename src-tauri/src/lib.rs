@@ -2,9 +2,9 @@ use rusqlite::types::Value;
 use rusqlite::{params, Connection};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex, OnceLock};
 use jieba_rs::Jieba;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -64,7 +64,6 @@ struct ReviewResult {
 }
 
 fn now_ms() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -96,6 +95,12 @@ const EN_STOP: &[&str] = &[
     "them", "you", "out", "get", "got", "her", "his", "our",
 ];
 
+// 停用词查表改为 O(1)：中英文各预建一个 HashSet（一次性，进程内常驻）。
+static CJK_STOP: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    STOP_CHARS.iter().chain(PHRASE_STOP.iter()).copied().collect()
+});
+static EN_STOP_SET: LazyLock<HashSet<&'static str>> = LazyLock::new(|| EN_STOP.iter().copied().collect());
+
 fn is_cjk(c: char) -> bool {
     let code = c as u32;
     (0x3400..=0x9fff).contains(&code)
@@ -116,7 +121,7 @@ fn keep_token(tok: &str) -> Option<String> {
         if t.chars().count() < 2 {
             return None; // 单字中文通常是噪声
         }
-        if STOP_CHARS.contains(&t) || PHRASE_STOP.contains(&t) {
+        if CJK_STOP.contains(t) {
             return None;
         }
         Some(t.to_string())
@@ -129,7 +134,7 @@ fn keep_token(tok: &str) -> Option<String> {
         if lower.chars().count() < 2 {
             return None;
         }
-        if EN_STOP.contains(&lower.as_str()) {
+        if EN_STOP_SET.contains(lower.as_str()) {
             return None;
         }
         Some(lower)
@@ -230,13 +235,10 @@ fn init_db(app: &tauri::App) -> Result<Connection, Box<dyn std::error::Error>> {
     Ok(conn)
 }
 
-fn insert_entry(
-    conn: &Connection,
-    content: &str,
-    score: i64,
-    created_at: i64,
-    is_sample: i64,
-) -> Result<i64, String> {
+/// 校验并规范化一条待写入的条目：内容非空、温度在 1~5。
+/// 返回 trim 后的内容；非法则给出面向用户的错误文案。
+/// insert 与 update 共用，避免两套校验规则漂移。
+fn validate_entry(content: &str, score: i64) -> Result<String, String> {
     let content = content.trim().to_string();
     if content.is_empty() {
         return Err("写点什么再留下吧".into());
@@ -244,6 +246,17 @@ fn insert_entry(
     if !(1..=5).contains(&score) {
         return Err("温度要在 1 到 5 之间".into());
     }
+    Ok(content)
+}
+
+fn insert_entry(
+    conn: &Connection,
+    content: &str,
+    score: i64,
+    created_at: i64,
+    is_sample: i64,
+) -> Result<i64, String> {
+    let content = validate_entry(content, score)?;
     conn.execute(
         "INSERT INTO entries (content, score, created_at, updated_at, is_sample) VALUES (?1, ?2, ?3, NULL, ?4)",
         params![content, score, created_at, is_sample],
@@ -259,13 +272,7 @@ fn update_entry_db(
     score: i64,
     updated_at: i64,
 ) -> Result<(), String> {
-    let content = content.trim().to_string();
-    if content.is_empty() {
-        return Err("写点什么再留下吧".into());
-    }
-    if !(1..=5).contains(&score) {
-        return Err("温度要在 1 到 5 之间".into());
-    }
+    let content = validate_entry(content, score)?;
     conn.execute(
         "UPDATE entries SET content = ?1, score = ?2, updated_at = ?3 WHERE id = ?4",
         params![content, score, updated_at, id],
@@ -386,15 +393,27 @@ fn db_stats_db(conn: &Connection) -> Result<DbStats, String> {
     })
 }
 
+/// 统计某类记录数：is_sample = 0 为真实记录，1 为示例数据。
+fn count_where(conn: &Connection, is_sample: i64) -> Result<i64, String> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM entries WHERE is_sample = ?",
+        params![is_sample],
+        |r| r.get(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
 /// 清理示例数据：删除全部 is_sample = 1 的记录。
 /// 守卫：只要混入任何一条真实记录就拒绝一键清理——这个按钮本就是为清示例数据而设，
 /// 绝不能误删用户的真实记录。刻意不碰 blocked_terms——那是用户通过 ✕ 沉淀的个人偏好。
+/// 直接按 is_sample 计数（省去一次无用的总 COUNT），语义与 db_stats 完全一致。
 fn clear_sample_data_db(conn: &Connection) -> Result<u64, String> {
-    let stats = db_stats_db(conn)?;
-    if stats.real > 0 {
+    let real = count_where(conn, 0)?;
+    if real > 0 {
         return Err("数据库里混入了真实记录，无法一键清理示例数据".into());
     }
-    if stats.sample == 0 {
+    let sample = count_where(conn, 1)?;
+    if sample == 0 {
         return Err("当前没有示例数据可清理".into());
     }
     conn.execute("DELETE FROM entries WHERE is_sample = 1", [])
@@ -478,7 +497,7 @@ fn summarize(
     let (count, avg): (i64, Option<f64>) = {
         let sql = format!("SELECT COUNT(*), AVG(score) FROM entries {}", wc);
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-        stmt.query_row(rusqlite::params_from_iter(p.clone()), |row| {
+        stmt.query_row(rusqlite::params_from_iter(p.iter()), |row| {
             Ok((row.get::<_, i64>(0)?, row.get::<_, Option<f64>>(1)?))
         })
         .map_err(|e| e.to_string())?
@@ -490,11 +509,11 @@ fn summarize(
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map(rusqlite::params_from_iter(p.clone()), |row| {
+        .query_map(rusqlite::params_from_iter(p.iter()), |row| {
             Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
         })
         .map_err(|e| e.to_string())?;
-    let mut map: std::collections::HashMap<i64, i64> = std::collections::HashMap::new();
+    let mut map: HashMap<i64, i64> = HashMap::new();
     for r in rows {
         let (s, c) = r.map_err(|e| e.to_string())?;
         map.insert(s, c);
