@@ -166,7 +166,7 @@ export function Review() {
           <section className="panel">
             <header className="panel-head">
               <h3 className="panel-title">最近的温度</h3>
-              <p className="panel-sub">这些天的平均温度</p>
+              <p className="panel-sub">把鼠标停在某个点上，看看那天的温度</p>
             </header>
             <TemperatureStream buckets={series} />
           </section>
