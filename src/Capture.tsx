@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { EntryEditor } from "./EntryEditor";
 
 const PLACEHOLDER =
-  "比如：今天路过一家藏在巷子里的小咖啡店，安静得让人想坐一会儿……\n或者一段长长的感受，都可以。";
+  "比如：今天路过一家藏在巷子里的小咖啡店，安静得让人想坐一会儿。一段长长的感受，也都可以随时写下来。";
 
 export function Capture() {
   const [content, setContent] = useState("");

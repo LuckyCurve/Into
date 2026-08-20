@@ -213,6 +213,8 @@ body {
   font: inherit;
   font-size: 17px;
   line-height: 1.7;
+  /* 中文段落首行缩进两格：像在纸上写一段话，纯视觉、不写入数据 */
+  text-indent: 2em;
   padding: 18px 20px;
   outline: none;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset;
@@ -221,7 +223,8 @@ body {
 
 .entry::placeholder {
   color: #c3a9a4;
-  white-space: pre-line;
+  /* 让引导语在框内自然折行成一段，避免硬换行造成的生硬两行 */
+  white-space: normal;
 }
 
 .entry:focus {
@@ -798,6 +801,8 @@ body {
   white-space: pre-wrap;
   line-height: 1.7;
   font-size: 16px;
+  /* 与录入态一致：回看时也像一段段文章，首行缩进两格（纯视觉） */
+  text-indent: 2em;
 }
 
 .entry-meta {
