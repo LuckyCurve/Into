@@ -100,12 +100,13 @@ describe("顶栏 · 更新检查", () => {
     expect(await screen.findByText("已经是最新版本")).toBeTruthy();
   });
 
-  it("手动检查：失败给出具体错误", async () => {
+  it("手动检查：失败时给出可读的错误提示（不暴露原始错误串）", async () => {
     state.reject = true;
     render(<App />);
     fireEvent.click(await screen.findByLabelText("设置"));
     fireEvent.click(await screen.findByRole("button", { name: "检查更新" }));
-    const err = await screen.findByText(/检查更新失败/);
+    // mock 的错误是 "network down"，应被转译成面向用户的网络提示
+    const err = await screen.findByText(/网络好像不太顺畅/);
     expect(err).toBeTruthy();
   });
 });

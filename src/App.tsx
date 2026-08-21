@@ -5,6 +5,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { Capture } from "./Capture";
 import { Review } from "./Review";
 import { Settings } from "./Settings";
+import { friendlyError } from "./errors";
 import type { UpdateInfo } from "./types";
 import "./App.css";
 
@@ -114,7 +115,7 @@ export default function App() {
         showToast("ok", "已经是最新版本");
       }
     } catch (e) {
-      showToast("error", `检查更新失败：${String(e)}`);
+      showToast("error", friendlyError(e, "检查更新失败，请稍后再试"));
     } finally {
       setChecking(false);
     }
@@ -125,16 +126,17 @@ export default function App() {
     const url = updateInfo?.url;
     if (!url) return;
     invoke("open_release_page", { url }).catch((e) =>
-      showToast("error", `打开失败：${String(e)}`),
+      showToast("error", friendlyError(e, "没能打开链接，请稍后再试")),
     );
   }
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== "Tab") return;
+      // 反引号键切换视图；把 Tab 留给键盘导航（在按钮间移动焦点）。
+      if (e.key !== "`") return;
       const el = e.target as HTMLElement | null;
       const tag = el?.tagName;
-      // 焦点在可编辑元素（输入文字 / 下拉等）内时，Tab 保持默认行为（在表单中移动焦点），不拦截
+      // 焦点在可编辑元素内时，` 是普通字符（用户可能真的想输入它），不拦截
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) {
         return;
       }
@@ -169,8 +171,8 @@ export default function App() {
         <div className="drag-spacer" />
         <nav
           className="tabs"
-          title="按 Tab 在「写一点」和「看看」之间切换"
-          aria-keyshortcuts="Tab"
+          title="按反引号键（`）在「写一点」和「看看」之间切换"
+          aria-keyshortcuts="`"
         >
           <button
             className={"tab" + (view === "capture" ? " on" : "")}
@@ -184,7 +186,7 @@ export default function App() {
           >
             看看
           </button>
-          <span className="tab-hint" aria-hidden="true">Tab ⇄</span>
+          <span className="tab-hint" aria-hidden="true">` ⇄</span>
         </nav>
         <button
           className="win-btn gear"
