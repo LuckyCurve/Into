@@ -6,7 +6,6 @@ import { temperatureSeries, DAY_MS } from "./analytics";
 import { TemperatureStream } from "./TemperatureStream";
 import { ScoreSpread } from "./ScoreSpread";
 import { KeywordCloud } from "./KeywordCloud";
-
 type Preset = "7d" | "30d" | "all" | "custom";
 
 function rangeMs(
@@ -44,19 +43,22 @@ export function Review() {
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [result, setResult] = useState<ReviewResult | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const [activeKeyword, setActiveKeyword] = useState<string | null>(null);
   const debounce = useRef<number | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  // 加载当前范围的记录；失败时置 loadError，让界面明确区分「出错」和「为空」。
+  function load() {
     fetchReview(preset, customStart, customEnd, appliedSearch)
       .then((r) => {
-        if (!cancelled) setResult(r);
+        setResult(r);
+        setLoadError(false);
       })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+      .catch(() => setLoadError(true));
+  }
+
+  useEffect(() => {
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preset, customStart, customEnd, appliedSearch]);
 
@@ -66,17 +68,10 @@ export function Review() {
     debounce.current = window.setTimeout(() => setAppliedSearch(v), 250);
   }
 
-  function reload() {
-    fetchReview(preset, customStart, customEnd, appliedSearch)
-      .then(setResult)
-      .catch(() => {});
-  }
-
   // 数据在别处（如设置面板）被改动后，刷新当前浏览
   useEffect(() => {
-    const onChanged = () => reload();
-    window.addEventListener("into:entries-changed", onChanged);
-    return () => window.removeEventListener("into:entries-changed", onChanged);
+    window.addEventListener("into:entries-changed", load);
+    return () => window.removeEventListener("into:entries-changed", load);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preset, customStart, customEnd, appliedSearch]);
 
@@ -155,10 +150,17 @@ export function Review() {
         />
       </div>
 
-      {entries.length === 0 ? (
+      {loadError ? (
+        <div className="load-error" role="alert">
+          <p>记录没能加载出来。</p>
+          <button type="button" className="ghost" onClick={load}>
+            重试
+          </button>
+        </div>
+      ) : entries.length === 0 ? (
         <p className="empty">
           {appliedSearch
-            ? "没有匹配的记录。"
+            ? "没有匹配的记录，换个关键词试试？"
             : "这段时间还没留下什么。回到首页写一点？"}
         </p>
       ) : (
@@ -211,7 +213,7 @@ export function Review() {
                 key={e.id}
                 entry={e}
                 highlight={activeKeyword ?? undefined}
-                onChanged={reload}
+                onChanged={load}
               />
             ))}
             {filtered.length === 0 && (

@@ -10,8 +10,15 @@ interface Props {
 const H = 120;
 const W = 100;
 
-// 温度等级配色，与「温度的切面」同源，让“点”和“条”说的是同一种温度。
-const LEVEL_COLORS = ["#e7a78f", "#db8470", "#cf7e93", "#cf6a54", "#c25a78"];
+// 温度等级配色：引用全局 CSS 变量（--temp-1~5），与「温度的切面」严格同源，
+// 让“点”和“条”说的是同一种温度。
+const LEVEL_COLORS = [
+  "var(--temp-1)",
+  "var(--temp-2)",
+  "var(--temp-3)",
+  "var(--temp-4)",
+  "var(--temp-5)",
+];
 
 function levelOf(avg: number): number {
   return Math.min(5, Math.max(1, Math.round(avg)));

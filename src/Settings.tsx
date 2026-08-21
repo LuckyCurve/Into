@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { isEnabled, enable, disable } from "@tauri-apps/plugin-autostart";
 import { invoke } from "@tauri-apps/api/core";
 import type { DbStats } from "./types";
@@ -50,6 +50,7 @@ export function Settings({
   const [newTerm, setNewTerm] = useState("");
   // 数据库记录构成：用于驱动「生成 / 清理示例数据」按钮的可用状态。
   const [stats, setStats] = useState<DbStats | null>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
   // 读取数据库记录构成（总 / 示例 / 真实 + 是否可清示例）。
   function loadStats() {
@@ -74,6 +75,17 @@ export function Settings({
       cancelled = true;
     };
   }, [open]);
+
+  // 打开时把焦点移进面板（关闭按钮），Esc 直接关面板；关闭即清理监听。
+  useEffect(() => {
+    if (!open) return;
+    closeRef.current?.focus();
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
   async function toggle() {
     if (loading || busy) return;
@@ -165,7 +177,12 @@ export function Settings({
       >
         <div className="settings-head">
           <span className="settings-title">设置</span>
-          <button className="settings-close" aria-label="关闭" onClick={onClose}>
+          <button
+            ref={closeRef}
+            className="settings-close"
+            aria-label="关闭"
+            onClick={onClose}
+          >
             ×
           </button>
         </div>

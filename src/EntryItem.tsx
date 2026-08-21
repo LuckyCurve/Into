@@ -4,6 +4,7 @@ import type { Entry } from "./types";
 import { EntryEditor } from "./EntryEditor";
 import { Temperature } from "./Temperature";
 import { formatDate } from "./format";
+import { friendlyError } from "./errors";
 
 function renderContent(text: string, hl?: string): ReactNode {
   if (!hl) return text;
@@ -50,15 +51,23 @@ export function EntryItem({ entry, highlight, onChanged }: Props) {
       setError("给一个温度");
       return;
     }
-    await invoke("update_entry", { id: entry.id, content: content.trim(), score });
-    setEditing(false);
-    setError(null);
-    onChanged();
+    try {
+      await invoke("update_entry", { id: entry.id, content: content.trim(), score });
+      setEditing(false);
+      setError(null);
+      onChanged();
+    } catch (e) {
+      setError(friendlyError(e, "没保存上，请再试一次"));
+    }
   }
 
   async function remove() {
-    await invoke("delete_entry", { id: entry.id });
-    onChanged();
+    try {
+      await invoke("delete_entry", { id: entry.id });
+      onChanged();
+    } catch (e) {
+      setError(friendlyError(e, "没删掉，请再试一次"));
+    }
   }
 
   if (editing) {
@@ -95,6 +104,7 @@ export function EntryItem({ entry, highlight, onChanged }: Props) {
   return (
     <li className="entry-item">
       <p className="entry-content">{renderContent(entry.content, highlight)}</p>
+      {error && <p className="item-error">{error}</p>}
       <div className="entry-meta">
         <Temperature value={entry.score} readOnly />
         <span className="entry-date">{formatDate(entry.created_at)}</span>

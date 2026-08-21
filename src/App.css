@@ -2,12 +2,21 @@
   --paper: #f5e6e1;
   --paper-soft: #fbf1ee;
   --ink: #463a3d;
-  --ink-soft: #8c767b;
+  /* 辅助文字色：加深到对纸底 ≥4.5:1（WCAG AA），色相不变 */
+  --ink-soft: #7a6166;
   --coral: #e08a72;
   --coral-deep: #cf6a54;
   --rose: #cf7e93;
   --glow: #f8d6c2;
   --line: #ecd6d0;
+  /* 成功反馈：与玫瑰系并存的深绿，对小字也够对比 */
+  --ok: #276b43;
+  /* 温度 1~5 共用色阶：珊瑚向莓果渐深，「点」和「条」同源 */
+  --temp-1: #eda995;
+  --temp-2: #e08f7d;
+  --temp-3: #d67a80;
+  --temp-4: #c96a72;
+  --temp-5: #b8556e;
   --sans: ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Songti SC",
     "Noto Serif SC", Georgia, serif;
@@ -30,6 +39,20 @@ body {
   color: var(--ink);
   font-family: var(--serif);
   -webkit-font-smoothing: antialiased;
+}
+
+/* 键盘可达性：统一的焦点环，程序化聚焦时也有可见反馈 */
+:focus-visible {
+  outline: 2px solid var(--coral-deep);
+  outline-offset: 2px;
+}
+
+/* 输入类控件已有边框变色 + 光环反馈，不叠加 outline */
+.entry:focus-visible,
+.search:focus-visible,
+.blocked-input:focus-visible,
+.custom-range input[type="date"]:focus-visible {
+  outline: none;
 }
 
 /* ---------- 滚动条：直接隐藏，但保留滚动能力 ----------
@@ -183,7 +206,6 @@ body {
   font-family: var(--sans);
   font-size: 12px;
   letter-spacing: 0.18em;
-  text-transform: uppercase;
   color: var(--coral-deep);
 }
 
@@ -327,7 +349,11 @@ body {
   font-family: var(--sans);
 }
 
-.status.ok,
+/* 成功与错误是两种语义，不能共用一个颜色 */
+.status.ok {
+  color: var(--ok);
+}
+
 .status.err {
   color: var(--rose);
 }
@@ -410,10 +436,6 @@ body {
   box-shadow: 0 0 0 4px rgba(224, 138, 114, 0.16);
 }
 
-.sample-btn {
-  align-self: flex-start;
-}
-
 .panel {
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -435,7 +457,6 @@ body {
   font-family: var(--sans);
   font-size: 14px;
   letter-spacing: 0.14em;
-  text-transform: uppercase;
   color: var(--coral-deep);
   font-weight: 600;
 }
@@ -663,19 +684,19 @@ body {
 }
 
 .spread-fill[data-score="1"] {
-  background: #e7a78f;
+  background: var(--temp-1);
 }
 .spread-fill[data-score="2"] {
-  background: #db8470;
+  background: var(--temp-2);
 }
 .spread-fill[data-score="3"] {
-  background: #cf7e93;
+  background: var(--temp-3);
 }
 .spread-fill[data-score="4"] {
-  background: #cf6a54;
+  background: var(--temp-4);
 }
 .spread-fill[data-score="5"] {
-  background: #c25a78;
+  background: var(--temp-5);
 }
 
 .spread-num {
@@ -720,11 +741,6 @@ body {
 .cloud-word.on {
   background: linear-gradient(180deg, var(--coral), var(--coral-deep));
   color: #fff;
-}
-
-.cloud-word:focus-visible {
-  outline: 2px solid var(--coral);
-  outline-offset: 2px;
 }
 
 .cloud-empty {
@@ -876,6 +892,25 @@ body {
   font-family: var(--sans);
   font-size: 14px;
   padding: 28px 0;
+}
+
+/* 加载失败：和空状态明确区分——说清出了事，并给出重试入口 */
+.load-error {
+  border: 1px solid var(--rose);
+  border-radius: 16px;
+  background: var(--paper-soft);
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.load-error p {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--rose);
 }
 
 /* custom window frame + resize handles (native frame removed) */
@@ -1245,7 +1280,7 @@ body {
 }
 
 .toast-ok {
-  color: #2f7d4f;
+  color: var(--ok);
 }
 
 .toast-error {
