@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  cleanup,
+  waitFor,
+  act,
+} from "@testing-library/react";
 import App from "./App";
 import type { UpdateInfo } from "./types";
 
@@ -108,5 +115,53 @@ describe("顶栏 · 更新检查", () => {
     // mock 的错误是 "network down"，应被转译成面向用户的网络提示
     const err = await screen.findByText(/网络好像不太顺畅/);
     expect(err).toBeTruthy();
+  });
+});
+
+describe("全局 · into:toast 事件桥", () => {
+  function emit(kind: "ok" | "info" | "error", msg: string) {
+    window.dispatchEvent(new CustomEvent("into:toast", { detail: { kind, msg } }));
+  }
+
+  it("深层组件派发 into:toast 能弹出对应文案与状态的 toast", async () => {
+    render(<App />);
+    await act(async () => {}); // 让启动期 effect 先跑完
+    act(() => emit("error", "没能屏蔽「咖啡」，请稍后再试"));
+    const toast = screen.getByRole("status");
+    expect(toast.textContent).toContain("没能屏蔽「咖啡」");
+    expect(toast.className).toBe("toast toast-error");
+  });
+
+  it("detail 缺失或残缺时静默忽略，不弹空白 toast", async () => {
+    render(<App />);
+    await act(async () => {});
+    act(() => {
+      window.dispatchEvent(new Event("into:toast")); // 没有 detail
+    });
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("点击 toast 立即消失", async () => {
+    render(<App />);
+    await act(async () => {});
+    act(() => emit("ok", "已是最新版本"));
+    fireEvent.click(screen.getByRole("status"));
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("toast 在 4 秒后自动消失", async () => {
+    vi.useFakeTimers();
+    try {
+      render(<App />);
+      await act(async () => {});
+      act(() => emit("ok", "已屏蔽「咖啡」，可在设置里解除"));
+      expect(screen.getByRole("status")).toBeTruthy();
+      act(() => {
+        vi.advanceTimersByTime(4000);
+      });
+      expect(screen.queryByRole("status")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

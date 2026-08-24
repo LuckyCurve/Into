@@ -98,6 +98,17 @@ export default function App() {
     return () => clearTimeout(t);
   }, [toast]);
 
+  // 深层组件（如回看页的屏蔽动作）也能借全局事件弹 toast。
+  useEffect(() => {
+    function onToast(e: Event) {
+      const d = (e as CustomEvent<{ kind: "ok" | "info" | "error"; msg: string }>)
+        .detail;
+      if (d) setToast(d);
+    }
+    window.addEventListener("into:toast", onToast);
+    return () => window.removeEventListener("into:toast", onToast);
+  }, []);
+
   function showToast(kind: "ok" | "info" | "error", msg: string) {
     setToast({ kind, msg });
   }

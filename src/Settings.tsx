@@ -47,7 +47,6 @@ export function Settings({
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [blocked, setBlocked] = useState<string[]>([]);
-  const [newTerm, setNewTerm] = useState("");
   // 数据库记录构成：用于驱动「生成 / 清理示例数据」按钮的可用状态。
   const [stats, setStats] = useState<DbStats | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -141,20 +140,8 @@ export function Settings({
     }
   }
 
-  async function addBlocked() {
-    const term = newTerm.trim();
-    if (!term) return;
-    try {
-      await invoke("block_keyword", { term });
-      setNewTerm("");
-      const list = await invoke<string[]>("list_blocked_terms");
-      setBlocked(list);
-      window.dispatchEvent(new Event("into:entries-changed"));
-    } catch (e) {
-      console.error("屏蔽词失败", e);
-    }
-  }
-
+  // 屏蔽词的添加入口在「看看」的词云里（右键一个常提到的词）；
+  // 这里只负责查看与解除。
   async function removeBlocked(term: string) {
     try {
       await invoke("unblock_keyword", { term });
@@ -295,29 +282,10 @@ export function Settings({
         <div className="settings-divider" />
         <div className="settings-section-title">屏蔽的词</div>
         <div className="settings-blocked">
-          <div className="blocked-row">
-            <input
-              className="blocked-input"
-              type="text"
-              placeholder="屏蔽一个词（不再出现在关键词里）"
-              value={newTerm}
-              onChange={(e) => setNewTerm(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") addBlocked();
-              }}
-              aria-label="要屏蔽的词"
-            />
-            <button
-              type="button"
-              className="ghost"
-              disabled={newTerm.trim().length === 0}
-              onClick={addBlocked}
-            >
-              屏蔽
-            </button>
-          </div>
           {blocked.length === 0 ? (
-            <p className="blocked-empty">还没有屏蔽的词。</p>
+            <p className="blocked-empty">
+              还没有屏蔽的词。在「看看」里右键一个常提到的词，就能把它屏蔽。
+            </p>
           ) : (
             <div className="blocked-list">
               {blocked.map((term) => (

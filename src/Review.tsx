@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Entry, ReviewResult } from "./types";
+import { friendlyError } from "./errors";
 import { EntryItem } from "./EntryItem";
 import { temperatureSeries, DAY_MS } from "./analytics";
 import { TemperatureStream } from "./TemperatureStream";
@@ -95,6 +96,31 @@ export function Review() {
     setActiveKeyword((prev) => (prev === term ? null : term));
   }
 
+  // 词云右键 → 屏蔽：写库后立刻刷新，让这个词从云里消失。
+  // 成败都借 App 的 toast 给一句反馈；解除入口在设置里。
+  async function blockTerm(term: string) {
+    try {
+      await invoke("block_keyword", { term });
+      if (activeKeyword === term) setActiveKeyword(null);
+      load();
+      window.dispatchEvent(
+        new CustomEvent("into:toast", {
+          detail: { kind: "ok", msg: `已屏蔽「${term}」，可在设置里解除` },
+        }),
+      );
+    } catch (e) {
+      console.error("屏蔽词失败", e);
+      window.dispatchEvent(
+        new CustomEvent("into:toast", {
+          detail: {
+            kind: "error",
+            msg: friendlyError(e, `没能屏蔽「${term}」，请稍后再试`),
+          },
+        }),
+      );
+    }
+  }
+
   return (
     <section className="review">
       <div className="review-controls">
@@ -184,12 +210,13 @@ export function Review() {
           <section className="panel">
             <header className="panel-head">
               <h3 className="panel-title">你最近常提到</h3>
-              <p className="panel-sub">点一个词，只看相关记录</p>
+              <p className="panel-sub">点一个词，只看相关记录；右键可屏蔽</p>
             </header>
             <KeywordCloud
               keywords={keywords}
               active={activeKeyword}
               onToggle={toggleKeyword}
+              onBlock={blockTerm}
             />
           </section>
 

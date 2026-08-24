@@ -17,12 +17,17 @@ const { enable, disable, isEnabled } = vi.hoisted(() => ({
 
 const dbStats = vi.hoisted(() => ({
   // 默认：空库（total=0），生成按钮可用、清理按钮禁用。
-  value: { total: 0, sample: 0, real: 0, can_clear_sample: false },
+  value: { total: 0, sample: 0, real: 0, can_clear_sample: false } as DbStats,
+}));
+
+const blocked = vi.hoisted(() => ({
+  // 默认：已有两个屏蔽词，供列表展示用例使用。
+  value: ["咖啡", "电影"],
 }));
 
 const invoke = vi.hoisted(() =>
   vi.fn((cmd: string) => {
-    if (cmd === "list_blocked_terms") return Promise.resolve(["咖啡", "电影"]);
+    if (cmd === "list_blocked_terms") return Promise.resolve(blocked.value);
     if (cmd === "db_stats") return Promise.resolve(dbStats.value);
     return Promise.resolve(undefined);
   }),
@@ -40,6 +45,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   dbStats.value = { total: 0, sample: 0, real: 0, can_clear_sample: false };
+  blocked.value = ["咖啡", "电影"];
 });
 
 describe("decideAutostartAction", () => {
@@ -99,14 +105,43 @@ describe("设置页 · 屏蔽的词", () => {
     await waitFor(() => expect(screen.queryByText("咖啡")).toBeNull());
   });
 
-  it("输入词后点击屏蔽，调用 block_keyword", async () => {
+  it("不再提供手动输入入口：屏蔽词只能在词云里右键添加", async () => {
     render(<Settings open={true} onClose={() => {}} />);
-    const input = await screen.findByLabelText("要屏蔽的词");
-    fireEvent.change(input, { target: { value: "测试词" } });
-    fireEvent.click(screen.getByText("屏蔽"));
-    await waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith("block_keyword", { term: "测试词" }),
-    );
+    await screen.findByText("咖啡");
+    expect(screen.queryByLabelText("要屏蔽的词")).toBeNull();
+    expect(screen.queryByRole("button", { name: "屏蔽" })).toBeNull();
+    // 空态文案要指路：去「看看」里右键。
+    blocked.value = [];
+    cleanup();
+    render(<Settings open={true} onClose={() => {}} />);
+    expect(await screen.findByText(/右键/)).toBeTruthy();
+  });
+
+  it("设置页内不触发 block_keyword（添加动作不在这里）", async () => {
+    render(<Settings open={true} onClose={() => {}} />);
+    await screen.findByText("咖啡");
+    expect(invoke).not.toHaveBeenCalledWith("block_keyword", expect.anything());
+  });
+
+  it("解除屏蔽后广播 into:entries-changed，让回看页立即刷新", async () => {
+    const spy = vi.fn();
+    window.addEventListener("into:entries-changed", spy);
+    render(<Settings open={true} onClose={() => {}} />);
+    fireEvent.click(await screen.findByLabelText("解除屏蔽「电影」"));
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    window.removeEventListener("into:entries-changed", spy);
+  });
+
+  it("关闭再打开面板会重新拉取屏蔽列表（不留旧数据）", async () => {
+    const { rerender } = render(<Settings open={true} onClose={() => {}} />);
+    await screen.findByText("咖啡");
+    const listCalls = () =>
+      invoke.mock.calls.filter((c) => c[0] === "list_blocked_terms").length;
+    expect(listCalls()).toBe(1);
+
+    rerender(<Settings open={false} onClose={() => {}} />);
+    rerender(<Settings open={true} onClose={() => {}} />);
+    await waitFor(() => expect(listCalls()).toBe(2));
   });
 });
 
