@@ -75,7 +75,7 @@ const STOP_CHARS: &[&str] = &[
     "的", "了", "是", "我", "你", "他", "她", "它", "在", "和", "与", "也", "都", "就", "不", "人", "有", "这", "那", "个",
     "们", "会", "能", "要", "上", "下", "里", "中", "到", "去", "来", "说", "看", "想", "很", "太", "又", "还", "但", "而",
     "把", "被", "让", "给", "从", "向", "对", "为", "以", "因", "所", "之", "其", "此", "些", "吗", "呢", "吧", "啊", "呀", "哦",
-    "嘛", "没", "着", "过", "得", "地", "等", "让", "今", "明", "昨", "早", "晚", "午", "周", "时", "候", "刚", "才", "最",
+    "嘛", "没", "着", "过", "得", "地", "等", "今", "明", "昨", "早", "晚", "午", "周", "时", "候", "刚", "才", "最",
     "近", "前", "后", "每", "听", "吃", "买", "玩", "喝", "读", "写", "做", "走", "跑", "聊", "学", "卖", "家", "本", "部",
     "杯", "次", "场", "件", "位", "条", "种", "类", "双", "只", "块", "点",
 ];
@@ -278,6 +278,12 @@ fn update_entry_db(
         params![content, score, updated_at, id],
     )
     .map_err(|e| e.to_string())?;
+    // 目标行不存在（如已被其他途径删除）时不许静默成功——
+    // 用户会以为保存了，刷新后却发现编辑丢失。报错文案里的「找不到」
+    // 会被前端 errors.ts 的 not found 规则映射成面向用户的提示。
+    if conn.changes() == 0 {
+        return Err(format!("找不到要编辑的记录（id = {id}）"));
+    }
     Ok(())
 }
 
@@ -332,9 +338,16 @@ fn unblock_term_db(conn: &Connection, term: &str) -> Result<(), String> {
 }
 
 /// 生成一批本地示例记录，用于预览分析效果（不含任何真实数据）。
+/// 守卫：仅当数据库为空时允许——产品承诺「生成示例只在数据库为空时可用」；
+/// 这条防线放在数据层而不是只靠前端禁用按钮，与 clear_sample_data 的守卫对称，
+/// 防止示例数据混入真实记录后无法再一键清理。
 /// 内容刻意混入反复出现的主题词（咖啡/电影/雨天/散步/独处/音乐/React）与
 /// 会被过滤的套路词（今天/感觉/看了/不错），方便检验关键词云与停用词。
 fn seed_test_data_db(conn: &Connection, n: i64) -> Result<i64, String> {
+    let existing = count_where(conn, 0)? + count_where(conn, 1)?;
+    if existing > 0 {
+        return Err("数据库已有记录，无法再生成示例数据".into());
+    }
     let pool: [&str; 12] = [
         "今天在街角咖啡店坐了一会儿，感觉很不错",
         "看了《星际穿越》，雨天里很舒服",
@@ -421,6 +434,22 @@ fn clear_sample_data_db(conn: &Connection) -> Result<u64, String> {
     Ok(conn.changes() as u64)
 }
 
+/// 把搜索词包成 LIKE 字面量：转义 LIKE 通配符（\ % _），
+/// 配合 ESCAPE '\' 让用户搜「100%」「_test」时按字面匹配，
+/// 而不是把 % 当成任意串通配符。
+fn like_literal(token: &str) -> String {
+    let mut out = String::with_capacity(token.len() + 2);
+    out.push('%');
+    for c in token.chars() {
+        if c == '\\' || c == '%' || c == '_' {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out.push('%');
+    out
+}
+
 /// Shared WHERE clause for time range + multi-keyword search (AND of tokens).
 fn build_where(
     start_ms: Option<i64>,
@@ -439,8 +468,8 @@ fn build_where(
     }
     if let Some(q) = search {
         for token in q.split_whitespace() {
-            clauses.push("content LIKE ?".to_string());
-            params.push(Value::from(format!("%{}%", token)));
+            clauses.push("content LIKE ? ESCAPE '\\'".to_string());
+            params.push(Value::from(like_literal(token)));
         }
     }
     let where_clause = if clauses.is_empty() {
@@ -740,6 +769,14 @@ pub fn run() {
             }
             Ok(())
         })
+        .on_window_event(|window, event| {
+            // 关窗口（× 按钮、Alt+F4、任务栏右键关闭）一律收进托盘而不是退出，
+            // 与 README 的承诺一致；真正退出走托盘菜单的「退出」。
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             add_entry,
             update_entry,
@@ -839,6 +876,43 @@ mod tests {
         assert_eq!(list[0].content, "改过了");
         assert_eq!(list[0].score, 4);
         assert_eq!(list[0].updated_at, Some(999));
+    }
+
+    #[test]
+    fn update_missing_entry_fails_loudly() {
+        let c = mem();
+        // 编辑一个不存在的 id：不许静默成功，否则用户会以为保存了。
+        let err = update_entry_db(&c, 9999, "改过了", 4, 999).unwrap_err();
+        // 文案里的「找不到」供前端 errors.ts 的 not found 规则识别
+        assert!(err.contains("找不到"));
+        // 库里没有任何行被写入
+        assert_eq!(query_entries(&c, None, None, None, 10).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn like_literal_escapes_wildcards() {
+        assert_eq!(like_literal("咖啡"), "%咖啡%");
+        assert_eq!(like_literal("100%"), "%100\\%%");
+        assert_eq!(like_literal("_test"), "%\\_test%");
+        assert_eq!(like_literal("a\\b"), "%a\\\\b%");
+    }
+
+    #[test]
+    fn search_treats_like_wildcards_as_literals() {
+        let c = mem();
+        add(&c, "打了个九折，省了50%", 4, 1);
+        add(&c, "50x 折扣不存在", 3, 2);
+        add(&c, "文件名叫 _draft 的笔记", 5, 3);
+        add(&c, "随便一个 draft 词", 2, 4);
+        // % 必须按字面匹配：只命中真正含「50%」的那条，
+        // 而不是把 % 当通配符把「50x」也捞进来。
+        let hits = query_entries(&c, None, None, Some("50%"), 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].content, "打了个九折，省了50%");
+        // _ 同理：只匹配字面下划线，不匹配任意单字符。
+        let hits = query_entries(&c, None, None, Some("_draft"), 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].content, "文件名叫 _draft 的笔记");
     }
 
     #[test]
@@ -943,6 +1017,21 @@ mod tests {
     }
 
     #[test]
+    fn generate_test_data_refuses_when_db_not_empty() {
+        let c = mem();
+        // 已有真实记录：拒绝生成，且不写入任何行。
+        insert_entry(&c, "用户真实记录", 4, 123, 0).unwrap();
+        let err = seed_test_data_db(&c, 40).unwrap_err();
+        assert!(err.contains("已有记录"));
+        assert_eq!(query_entries(&c, None, None, None, 100).unwrap().len(), 1);
+        // 只有示例记录（尚未清空）时同样拒绝，防止重复堆叠示例。
+        let c2 = mem();
+        seed_test_data_db(&c2, 5).unwrap();
+        assert!(seed_test_data_db(&c2, 5).is_err());
+        assert_eq!(query_entries(&c2, None, None, None, 100).unwrap().len(), 5);
+    }
+
+    #[test]
     fn db_stats_empty_db() {
         let c = mem();
         let stats = db_stats_db(&c).unwrap();
@@ -1029,11 +1118,12 @@ mod tests {
         assert_eq!(stats.real, 2);
         // 全是真实记录 → 禁用「清理示例数据」，避免误删。
         assert!(!stats.can_clear_sample);
-        // 迁移后新代码仍可正常写入示例与读取。
-        seed_test_data_db(&c, 3).unwrap();
+        // 迁移后新代码仍可正常读取与统计；且库里已有真实记录时，
+        // 生成示例会被空库守卫拒绝（与全新库上的行为一致）。
+        assert!(seed_test_data_db(&c, 3).is_err());
         let stats2 = db_stats_db(&c).unwrap();
-        assert_eq!(stats2.total, 5);
-        assert_eq!(stats2.sample, 3);
+        assert_eq!(stats2.total, 2);
+        assert_eq!(stats2.sample, 0);
         assert_eq!(stats2.real, 2);
     }
 

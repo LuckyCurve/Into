@@ -2,6 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { isEnabled, enable, disable } from "@tauri-apps/plugin-autostart";
 import { invoke } from "@tauri-apps/api/core";
 import type { DbStats } from "./types";
+import { friendlyError } from "./errors";
+
+/** 借 App 的全局 toast 给一句反馈（深层组件不直接持有 toast 状态）。 */
+function toast(kind: "ok" | "info" | "error", msg: string) {
+  window.dispatchEvent(new CustomEvent("into:toast", { detail: { kind, msg } }));
+}
 
 export type AutostartAction = "enable" | "disable";
 
@@ -118,7 +124,9 @@ export function Settings({
       window.dispatchEvent(new Event("into:entries-changed"));
       loadStats();
     } catch (e) {
+      // 后端空库守卫等失败要可见，不能只写 console 让用户干等。
       console.error("生成示例数据失败", e);
+      toast("error", friendlyError(e, "没能生成示例数据，请稍后再试"));
     } finally {
       setGenerating(false);
       setConfirmGenerate(false);
@@ -134,6 +142,7 @@ export function Settings({
       loadStats();
     } catch (e) {
       console.error("清理示例数据失败", e);
+      toast("error", friendlyError(e, "没能清理示例数据，请稍后再试"));
     } finally {
       setClearing(false);
       setConfirmClear(false);

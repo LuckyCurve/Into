@@ -9,17 +9,22 @@ import { ScoreSpread } from "./ScoreSpread";
 import { KeywordCloud } from "./KeywordCloud";
 type Preset = "7d" | "30d" | "all" | "custom";
 
-function rangeMs(
+/**
+ * 把筛选预设换算成后端的半开区间 [start_ms, end_ms)。
+ * 纯函数（now 由调用方注入），便于单测；
+ * 结束日边界取「次日零点」，与后端 created_at < end_ms 直接对应。
+ */
+export function rangeMs(
   preset: Preset,
   start: string,
   end: string,
+  now = Date.now(),
 ): { start_ms: number | null; end_ms: number | null } {
-  const now = Date.now();
   if (preset === "7d") return { start_ms: now - 7 * DAY_MS, end_ms: now + 1000 };
   if (preset === "30d") return { start_ms: now - 30 * DAY_MS, end_ms: now + 1000 };
   if (preset === "all") return { start_ms: null, end_ms: null };
   const s = start ? new Date(start + "T00:00:00").getTime() : null;
-  const e = end ? new Date(end + "T23:59:59").getTime() + 1000 : null;
+  const e = end ? new Date(end + "T00:00:00").getTime() + DAY_MS : null;
   return { start_ms: s, end_ms: e };
 }
 
@@ -68,6 +73,14 @@ export function Review() {
     if (debounce.current) window.clearTimeout(debounce.current);
     debounce.current = window.setTimeout(() => setAppliedSearch(v), 250);
   }
+
+  // 卸载时清掉未触发的搜索防抖，不在已卸载组件上留回调。
+  useEffect(
+    () => () => {
+      if (debounce.current) window.clearTimeout(debounce.current);
+    },
+    [],
+  );
 
   // 数据在别处（如设置面板）被改动后，刷新当前浏览
   useEffect(() => {

@@ -179,7 +179,9 @@ export default function App() {
             New
           </button>
         )}
-        <div className="drag-spacer" />
+        {/* 纯布局占位：把 tabs 推到右侧；拖拽由整条 topbar 的 onMouseDown 负责，
+            这里不是拖拽热区（勿按 AGENTS.md 警告把它当热区用）。 */}
+        <div className="layout-spacer" />
         <nav
           className="tabs"
           title="按反引号键（`）在「写一点」和「看看」之间切换"

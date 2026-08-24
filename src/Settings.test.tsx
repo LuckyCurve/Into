@@ -29,9 +29,17 @@ const invoke = vi.hoisted(() =>
   vi.fn((cmd: string) => {
     if (cmd === "list_blocked_terms") return Promise.resolve(blocked.value);
     if (cmd === "db_stats") return Promise.resolve(dbStats.value);
+    if (cmd === "generate_test_data") {
+      if (generateState.reject) {
+        return Promise.reject("数据库已有记录，无法再生成示例数据");
+      }
+      return Promise.resolve(40);
+    }
     return Promise.resolve(undefined);
   }),
 );
+
+const generateState = vi.hoisted(() => ({ reject: false }));
 
 vi.mock("@tauri-apps/plugin-autostart", () => ({
   enable: () => enable(),
@@ -46,6 +54,7 @@ afterEach(() => {
   vi.clearAllMocks();
   dbStats.value = { total: 0, sample: 0, real: 0, can_clear_sample: false };
   blocked.value = ["咖啡", "电影"];
+  generateState.reject = false;
 });
 
 describe("decideAutostartAction", () => {
@@ -204,5 +213,20 @@ describe("设置页 · 示例数据生成与清理", () => {
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("generate_test_data"),
     );
+  });
+
+  it("生成失败时弹 error toast，不静默吞掉后端守卫的拒绝", async () => {
+    generateState.reject = true; // 后端空库守卫拒绝
+    const spy = vi.fn();
+    window.addEventListener("into:toast", spy);
+    render(<Settings open={true} onClose={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "生成示例数据" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认生成？" }));
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    const detail = spy.mock.calls[0][0] as CustomEvent<{ kind: string; msg: string }>;
+    expect(detail.detail.kind).toBe("error");
+    // 底层错误串不直接进界面，展示的是带场景的兑底文案
+    expect(detail.detail.msg).toContain("没能生成示例数据");
+    window.removeEventListener("into:toast", spy);
   });
 });

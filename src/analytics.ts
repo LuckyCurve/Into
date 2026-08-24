@@ -16,9 +16,11 @@ function startOfDay(ts: number): number {
 }
 
 function startOfWeek(ts: number): number {
-  const d = startOfDay(ts);
-  const dow = (new Date(d).getDay() + 6) % 7; // 周一=0
-  return d - dow * DAY_MS;
+  const d = new Date(startOfDay(ts));
+  // 日历回退而非毫秒减法：跨夏令时切换的一周里，
+  // 毫秒回退会让结果偏离周一零点。
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // 周一=0
+  return d.getTime();
 }
 
 function startOfMonth(ts: number): number {
@@ -39,13 +41,18 @@ function pickBucket(start: number, end: number): {
   return { size: 30 * DAY_MS, floor: startOfMonth };
 }
 
+/**
+ * 求下一个桶的起点。必须用日历运算（setDate / setMonth）推进，
+ * 而不是在毫秒上加减 DAY_MS：夏令时时区里一天可能只有 23 或 25 小时，
+ * 毫秒累加会让桶起点偏离真正的零点，与条目聚合用的 floor key 对不上，
+ * 导致当天的记录从序列里消失。
+ */
 function nextBoundary(t: number, size: number, floor: (x: number) => number): number {
-  if (size === 30 * DAY_MS) {
-    const d = new Date(floor(t));
-    d.setMonth(d.getMonth() + 1);
-    return d.getTime();
-  }
-  return floor(t) + size;
+  const d = new Date(floor(t));
+  if (size === 30 * DAY_MS) d.setMonth(d.getMonth() + 1);
+  else if (size === 7 * DAY_MS) d.setDate(d.getDate() + 7);
+  else d.setDate(d.getDate() + 1);
+  return d.getTime();
 }
 
 /** 把条目聚合成「温度随时间」的桶序列。空桶也会占位（avg=0），让曲线能呈现沉默。 */

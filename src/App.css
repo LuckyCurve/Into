@@ -108,7 +108,8 @@ body {
   flex: none;
 }
 
-.drag-spacer {
+/* 布局占位：把中间的 tabs 推到右侧。不是拖拽热区——拖拽在整条 topbar 上。 */
+.layout-spacer {
   flex: 1;
   height: 100%;
   user-select: none;

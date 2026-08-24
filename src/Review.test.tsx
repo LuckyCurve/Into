@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
-import { Review } from "./Review";
+import { Review, rangeMs } from "./Review";
 import type { ReviewResult } from "./types";
 
 const state = vi.hoisted(() => ({
@@ -52,6 +52,49 @@ afterEach(() => {
   vi.clearAllMocks();
   state.blockShouldReject = false;
   state.blockedTerms = [];
+});
+
+const DAY = 86_400_000;
+
+// 用固定 now 注入，断言与本地时区无关的相对关系。
+describe("rangeMs · 时间范围换算", () => {
+  const now = new Date(2024, 4, 10, 12, 0, 0).getTime();
+
+  it("最近7天：[now-7天, now+1s) 半开区间", () => {
+    const r = rangeMs("7d", "", "", now);
+    expect(r.start_ms).toBe(now - 7 * DAY);
+    expect(r.end_ms).toBe(now + 1000);
+  });
+
+  it("最近30天：[now-30天, now+1s)", () => {
+    const r = rangeMs("30d", "", "", now);
+    expect(r.start_ms).toBe(now - 30 * DAY);
+    expect(r.end_ms).toBe(now + 1000);
+  });
+
+  it("全部：两端都不限", () => {
+    expect(rangeMs("all", "", "", now)).toEqual({
+      start_ms: null,
+      end_ms: null,
+    });
+  });
+
+  it("自选：开始日取当天零点，结束日取次日零点（半开区间上界）", () => {
+    const r = rangeMs("custom", "2024-01-05", "2024-01-09", now);
+    expect(r.start_ms).toBe(new Date(2024, 0, 5).getTime());
+    // 上界是结束日的次日零点：created_at < 次日零点，含尽结束日全天。
+    expect(r.end_ms).toBe(new Date(2024, 0, 10).getTime());
+  });
+
+  it("自选只填一端时另一端不限", () => {
+    const onlyStart = rangeMs("custom", "2024-01-05", "", now);
+    expect(onlyStart.start_ms).toBe(new Date(2024, 0, 5).getTime());
+    expect(onlyStart.end_ms).toBeNull();
+
+    const onlyEnd = rangeMs("custom", "", "2024-01-09", now);
+    expect(onlyEnd.start_ms).toBeNull();
+    expect(onlyEnd.end_ms).toBe(new Date(2024, 0, 10).getTime());
+  });
 });
 
 describe("回看页 · 词云右键屏蔽链路", () => {
