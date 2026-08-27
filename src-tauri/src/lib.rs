@@ -749,10 +749,27 @@ where
     args.into_iter().any(|a| a.as_ref() == "--hidden")
 }
 
+/// 把主窗口还原并拉到前台：先取消最小化（`SW_RESTORE`；Windows 上纯 `show()` 即 `SW_SHOW`
+/// 不会恢复最小化的窗口），再显示、再聚焦。托盘左键点击与单例二次启动都走这里，
+/// 「还原主窗口」的口径只此一处，避免两处内联窗口操作日后漂移。
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            // 第二次启动（点了 exe / 快捷方式）时，插件拦下新进程并回调这里，
+            // 把已运行实例里那个被最小化 / 隐藏的窗口还原并拉到前台，
+            // 新进程随后自行退出，从而实现「单例」效果。还原口径统一走 show_main_window。
+            show_main_window(app);
+        }))
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec!["--hidden"]),
@@ -821,10 +838,7 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 ..
             } = event
             {
-                if let Some(w) = tray.app_handle().get_webview_window("main") {
-                    let _ = w.show();
-                    let _ = w.set_focus();
-                }
+                show_main_window(tray.app_handle());
             }
         })
         .build(app)?;
