@@ -49,6 +49,14 @@
   `core:window:allow-minimize`、`core:window:allow-close`。
 - 改 capabilities 后 `cargo check` 会校验权限名合法性（未知权限会直接报错）。
 
+## 单例运行（重复启动只还原窗口）
+- 用 `tauri-plugin-single-instance` 实现单例：程序已在运行时再次点击 exe / 快捷方式，第二个
+  进程会被插件拦下并回调已在运行的实例，把原有的 `main` 窗口还原到前台，而非开新窗口。
+- 「还原主窗口」的口径只有一处：`src-tauri/src/lib.rs` 的 `show_main_window(app)`
+  （`unminimize` → `show` → `set_focus`），托盘左键点击与单例二次启动都走它。
+  注意 Windows 上 `show()`（`SW_SHOW`）**不会**恢复最小化的窗口，必须先 `unminimize()`（`SW_RESTORE`）；
+  不要在这两处各自内联窗口操作，改还原逻辑只改 `show_main_window`。
+
 ## 开发约定（必须遵守）
 - **每次实现 / 修改功能，都要补充丰富的单元测试。**
   - Rust 侧：用 `cargo test`，通过 `Connection::open_in_memory()` 建内存库，覆盖 CRUD、参数校验、
