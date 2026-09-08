@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { DayBucket } from "./analytics";
+import { generateSmoothPath } from "./curve";
 import { formatMD } from "./format";
 import { TEMPERATURE_WORDS } from "./types";
 
@@ -36,39 +37,22 @@ export function TemperatureStream({ buckets }: Props) {
   const x = (i: number) => (n === 1 ? 50 : (i / (n - 1)) * W);
   const yFrac = (avg: number) => 1 - avg / 5; // 距顶比例：5 度贴顶，0 度贴底
 
-  // 只在有数据的桶之间连线：把连续有数据的桶切成若干段，
-  // 段与段之间的沉默日（count===0）断开，不把“没记录”画成最低温（0 度）。
-  const runs: number[][] = [];
-  let cur: number[] = [];
-  buckets.forEach((b, i) => {
-    if (b.count > 0) cur.push(i);
-    else if (cur.length) {
-      runs.push(cur);
-      cur = [];
-    }
-  });
-  if (cur.length) runs.push(cur);
+  // 提取有数据的点，用于绘制平滑曲线
+  const dataPoints = buckets
+    .map((b, i) => ({ index: i, x: x(i), y: yFrac(b.avg) * H, count: b.count }))
+    .filter((p) => p.count > 0);
 
-  const yAt = (i: number) => yFrac(buckets[i].avg) * H;
+  // 生成平滑曲线路径
+  const points = dataPoints.map((p) => ({ x: p.x, y: p.y }));
+  const linePath = generateSmoothPath(points);
 
-  const linePath = runs
-    .map((run) =>
-      run
-        .map((i, k) => (k === 0 ? `M${x(i)},${yAt(i)}` : `L${x(i)},${yAt(i)}`))
-        .join(" "),
-    )
-    .join(" ");
-
-  const areaPath = runs
-    .map((run) => {
-      const top2 = run
-        .map((i, k) => (k === 0 ? `M${x(i)},${yAt(i)}` : `L${x(i)},${yAt(i)}`))
-        .join(" ");
-      const first = run[0];
-      const last = run[run.length - 1];
-      return `${top2} L${x(last)},${H} L${x(first)},${H} Z`;
-    })
-    .join(" ");
+  // 面积填充：从曲线底部到基准线
+  let areaPath = linePath;
+  if (dataPoints.length > 0) {
+    const first = dataPoints[0];
+    const last = dataPoints[dataPoints.length - 1];
+    areaPath += ` L${last.x.toFixed(2)},${H} L${first.x.toFixed(2)},${H} Z`;
+  }
 
   const total = buckets.reduce((s, b) => s + b.count, 0);
   const avgAll = total
@@ -94,8 +78,9 @@ export function TemperatureStream({ buckets }: Props) {
           >
             <defs>
               <linearGradient id="streamFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--glow)" stopOpacity="0.95" />
-                <stop offset="100%" stopColor="var(--glow)" stopOpacity="0.04" />
+                <stop offset="0%" stopColor="var(--coral)" stopOpacity="0.4" />
+                <stop offset="50%" stopColor="var(--glow)" stopOpacity="0.2" />
+                <stop offset="100%" stopColor="var(--paper-soft)" stopOpacity="0.05" />
               </linearGradient>
             </defs>
             {/* 1~5 参考带：把曲线读成“温度刻度”，而不是一条无名起伏 */}
@@ -117,9 +102,9 @@ export function TemperatureStream({ buckets }: Props) {
               d={linePath}
               fill="none"
               stroke="var(--coral-deep)"
-              strokeWidth="1.5"
-              strokeLinejoin="round"
+              strokeWidth="2"
               strokeLinecap="round"
+              strokeLinejoin="round"
               vectorEffect="non-scaling-stroke"
             />
           </svg>

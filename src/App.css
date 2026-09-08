@@ -493,6 +493,8 @@ body {
   height: 100%;
   display: block;
   overflow: visible;
+  /* 让 SVG 路径渲染更平滑 */
+  shape-rendering: geometricPrecision;
 }
 
 /* 数据点的温度点：呼应录入时给念头打温度的签名元素 */
@@ -506,6 +508,8 @@ body {
   transform: translate(-50%, -50%);
   transition: transform 0.12s ease, box-shadow 0.12s ease;
   cursor: default;
+  /* 让数据点有轻微的光晕，增加柔和感 */
+  filter: drop-shadow(0 1px 2px rgba(224, 138, 114, 0.3));
 }
 
 .stream-dot.on {
@@ -532,6 +536,8 @@ body {
   pointer-events: none;
   z-index: 4;
   box-shadow: 0 8px 22px rgba(70, 58, 61, 0.28);
+  /* 让提示框更柔和 */
+  backdrop-filter: blur(8px);
 }
 
 .stream-tip.start {
